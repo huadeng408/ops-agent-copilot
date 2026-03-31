@@ -1,0 +1,19 @@
+{
+  "requested_rps": 200,
+  "achieved_rps": 80.64,
+  "total_requests": 6000,
+  "success_count": 5965,
+  "error_count": 35,
+  "error_rate": 0.0058,
+  "avg_latency_ms": 2403.02,
+  "p50_latency_ms": 2260,
+  "p95_latency_ms": 3364,
+  "p99_latency_ms": 6728,
+  "status_code_histogram": {
+    "200": 5965,
+    "500": 35
+  },
+  "app_status_histogram": {
+    "completed": 5965
+  }
+}

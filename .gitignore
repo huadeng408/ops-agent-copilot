@@ -1,0 +1,11 @@
+.env
+auth.json
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+logs/
+.venv/
+.vscode/
+*.sqlite3
+.run_*.pid
+pytest-cache-files-*/

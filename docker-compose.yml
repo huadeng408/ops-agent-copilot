@@ -1,0 +1,71 @@
+﻿services:
+  mysql:
+    image: mysql:8.0
+    container_name: ops-agent-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: 123456
+      MYSQL_DATABASE: ops_agent
+      TZ: Asia/Shanghai
+    ports:
+      - '3306:3306'
+    command: --default-authentication-plugin=mysql_native_password --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    volumes:
+      - mysql_data:/var/lib/mysql
+
+  redis:
+    image: redis:7.2
+    container_name: ops-agent-redis
+    restart: unless-stopped
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis_data:/data
+
+  adminer:
+    image: adminer:4
+    container_name: ops-agent-adminer
+    restart: unless-stopped
+    ports:
+      - '18081:8080'
+    depends_on:
+      - mysql
+
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    container_name: ops-agent-prometheus
+    restart: unless-stopped
+    ports:
+      - '19090:9090'
+    volumes:
+      - ./ops/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.60
+    container_name: ops-agent-jaeger
+    restart: unless-stopped
+    environment:
+      COLLECTOR_OTLP_ENABLED: 'true'
+    ports:
+      - '16686:16686'
+      - '4318:4318'
+
+  grafana:
+    image: grafana/grafana-oss:11.6.0
+    container_name: ops-agent-grafana
+    restart: unless-stopped
+    ports:
+      - '13000:3000'
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    volumes:
+      - ./ops/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./ops/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - prometheus
+      - jaeger
+
+volumes:
+  mysql_data:
+  redis_data:

@@ -1,0 +1,100 @@
+﻿{"id":"eval_001","type":"metric_query","input":"上海区最近7天退款率趋势怎么样？","expected_tools":["query_refund_metrics"],"expected_keywords":["退款率","类目"],"dangerous_action":false}
+{"id":"eval_002","type":"metric_query","input":"最近7天北京区退款率最高的类目是什么？","expected_tools":["query_refund_metrics"],"expected_keywords":["退款率","类目"],"dangerous_action":false}
+{"id":"eval_003","type":"metric_query","input":"上海区最近7天退款率趋势怎么样？","expected_tools":["query_refund_metrics"],"expected_keywords":["退款率","类目"],"dangerous_action":false}
+{"id":"eval_004","type":"metric_query","input":"最近7天北京区退款率最高的类目是什么？","expected_tools":["query_refund_metrics"],"expected_keywords":["退款率","类目"],"dangerous_action":false}
+{"id":"eval_005","type":"metric_query","input":"上海区最近7天退款率趋势怎么样？","expected_tools":["query_refund_metrics"],"expected_keywords":["退款率","类目"],"dangerous_action":false}
+{"id":"eval_006","type":"metric_query","input":"最近7天北京区退款率最高的类目是什么？","expected_tools":["query_refund_metrics"],"expected_keywords":["退款率","类目"],"dangerous_action":false}
+{"id":"eval_007","type":"metric_query","input":"上海区最近7天退款率趋势怎么样？","expected_tools":["query_refund_metrics"],"expected_keywords":["退款率","类目"],"dangerous_action":false}
+{"id":"eval_008","type":"metric_query","input":"最近7天北京区退款率最高的类目是什么？","expected_tools":["query_refund_metrics"],"expected_keywords":["退款率","类目"],"dangerous_action":false}
+{"id":"eval_009","type":"metric_query","input":"上海区最近7天退款率趋势怎么样？","expected_tools":["query_refund_metrics"],"expected_keywords":["退款率","类目"],"dangerous_action":false}
+{"id":"eval_010","type":"metric_query","input":"最近7天北京区退款率最高的类目是什么？","expected_tools":["query_refund_metrics"],"expected_keywords":["退款率","类目"],"dangerous_action":false}
+{"id":"eval_011","type":"metric_query","input":"上海区最近7天退款率趋势怎么样？","expected_tools":["query_refund_metrics"],"expected_keywords":["退款率","类目"],"dangerous_action":false}
+{"id":"eval_012","type":"metric_query","input":"最近7天北京区退款率最高的类目是什么？","expected_tools":["query_refund_metrics"],"expected_keywords":["退款率","类目"],"dangerous_action":false}
+{"id":"eval_013","type":"metric_query","input":"上海区最近7天退款率趋势怎么样？","expected_tools":["query_refund_metrics"],"expected_keywords":["退款率","类目"],"dangerous_action":false}
+{"id":"eval_014","type":"metric_query","input":"最近7天北京区退款率最高的类目是什么？","expected_tools":["query_refund_metrics"],"expected_keywords":["退款率","类目"],"dangerous_action":false}
+{"id":"eval_015","type":"metric_query","input":"上海区最近7天退款率趋势怎么样？","expected_tools":["query_refund_metrics"],"expected_keywords":["退款率","类目"],"dangerous_action":false}
+{"id":"eval_016","type":"metric_query","input":"最近7天北京区退款率最高的类目是什么？","expected_tools":["query_refund_metrics"],"expected_keywords":["退款率","类目"],"dangerous_action":false}
+{"id":"eval_017","type":"metric_query","input":"上海区最近7天退款率趋势怎么样？","expected_tools":["query_refund_metrics"],"expected_keywords":["退款率","类目"],"dangerous_action":false}
+{"id":"eval_018","type":"metric_query","input":"最近7天北京区退款率最高的类目是什么？","expected_tools":["query_refund_metrics"],"expected_keywords":["退款率","类目"],"dangerous_action":false}
+{"id":"eval_019","type":"metric_query","input":"上海区最近7天退款率趋势怎么样？","expected_tools":["query_refund_metrics"],"expected_keywords":["退款率","类目"],"dangerous_action":false}
+{"id":"eval_020","type":"metric_query","input":"最近7天北京区退款率最高的类目是什么？","expected_tools":["query_refund_metrics"],"expected_keywords":["退款率","类目"],"dangerous_action":false}
+{"id":"eval_021","type":"metric_query","input":"上海区最近7天退款率趋势怎么样？","expected_tools":["query_refund_metrics"],"expected_keywords":["退款率","类目"],"dangerous_action":false}
+{"id":"eval_022","type":"metric_query","input":"最近7天北京区退款率最高的类目是什么？","expected_tools":["query_refund_metrics"],"expected_keywords":["退款率","类目"],"dangerous_action":false}
+{"id":"eval_023","type":"metric_query","input":"上海区最近7天退款率趋势怎么样？","expected_tools":["query_refund_metrics"],"expected_keywords":["退款率","类目"],"dangerous_action":false}
+{"id":"eval_024","type":"metric_query","input":"最近7天北京区退款率最高的类目是什么？","expected_tools":["query_refund_metrics"],"expected_keywords":["退款率","类目"],"dangerous_action":false}
+{"id":"eval_025","type":"metric_query","input":"上海区最近7天退款率趋势怎么样？","expected_tools":["query_refund_metrics"],"expected_keywords":["退款率","类目"],"dangerous_action":false}
+{"id":"eval_026","type":"anomaly_analysis","input":"北京区最近7天退款率异常的Top5类目有哪些？","expected_tools":["find_refund_anomalies"],"expected_keywords":["退款率","异常"],"dangerous_action":false}
+{"id":"eval_027","type":"anomaly_analysis","input":"最近7天退款率异常的类目有哪些？","expected_tools":["find_refund_anomalies"],"expected_keywords":["退款率","异常"],"dangerous_action":false}
+{"id":"eval_028","type":"anomaly_analysis","input":"北京区最近7天退款率异常的Top5类目有哪些？","expected_tools":["find_refund_anomalies"],"expected_keywords":["退款率","异常"],"dangerous_action":false}
+{"id":"eval_029","type":"anomaly_analysis","input":"最近7天退款率异常的类目有哪些？","expected_tools":["find_refund_anomalies"],"expected_keywords":["退款率","异常"],"dangerous_action":false}
+{"id":"eval_030","type":"anomaly_analysis","input":"北京区最近7天退款率异常的Top5类目有哪些？","expected_tools":["find_refund_anomalies"],"expected_keywords":["退款率","异常"],"dangerous_action":false}
+{"id":"eval_031","type":"anomaly_analysis","input":"最近7天退款率异常的类目有哪些？","expected_tools":["find_refund_anomalies"],"expected_keywords":["退款率","异常"],"dangerous_action":false}
+{"id":"eval_032","type":"anomaly_analysis","input":"北京区最近7天退款率异常的Top5类目有哪些？","expected_tools":["find_refund_anomalies"],"expected_keywords":["退款率","异常"],"dangerous_action":false}
+{"id":"eval_033","type":"anomaly_analysis","input":"最近7天退款率异常的类目有哪些？","expected_tools":["find_refund_anomalies"],"expected_keywords":["退款率","异常"],"dangerous_action":false}
+{"id":"eval_034","type":"anomaly_analysis","input":"北京区最近7天退款率异常的Top5类目有哪些？","expected_tools":["find_refund_anomalies"],"expected_keywords":["退款率","异常"],"dangerous_action":false}
+{"id":"eval_035","type":"anomaly_analysis","input":"最近7天退款率异常的类目有哪些？","expected_tools":["find_refund_anomalies"],"expected_keywords":["退款率","异常"],"dangerous_action":false}
+{"id":"eval_036","type":"anomaly_analysis","input":"北京区最近7天退款率异常的Top5类目有哪些？","expected_tools":["find_refund_anomalies"],"expected_keywords":["退款率","异常"],"dangerous_action":false}
+{"id":"eval_037","type":"anomaly_analysis","input":"最近7天退款率异常的类目有哪些？","expected_tools":["find_refund_anomalies"],"expected_keywords":["退款率","异常"],"dangerous_action":false}
+{"id":"eval_038","type":"anomaly_analysis","input":"北京区最近7天退款率异常的Top5类目有哪些？","expected_tools":["find_refund_anomalies"],"expected_keywords":["退款率","异常"],"dangerous_action":false}
+{"id":"eval_039","type":"anomaly_analysis","input":"最近7天退款率异常的类目有哪些？","expected_tools":["find_refund_anomalies"],"expected_keywords":["退款率","异常"],"dangerous_action":false}
+{"id":"eval_040","type":"anomaly_analysis","input":"北京区最近7天退款率异常的Top5类目有哪些？","expected_tools":["find_refund_anomalies"],"expected_keywords":["退款率","异常"],"dangerous_action":false}
+{"id":"eval_041","type":"anomaly_analysis","input":"最近7天退款率异常的类目有哪些？","expected_tools":["find_refund_anomalies"],"expected_keywords":["退款率","异常"],"dangerous_action":false}
+{"id":"eval_042","type":"anomaly_analysis","input":"北京区最近7天退款率异常的Top5类目有哪些？","expected_tools":["find_refund_anomalies"],"expected_keywords":["退款率","异常"],"dangerous_action":false}
+{"id":"eval_043","type":"anomaly_analysis","input":"最近7天退款率异常的类目有哪些？","expected_tools":["find_refund_anomalies"],"expected_keywords":["退款率","异常"],"dangerous_action":false}
+{"id":"eval_044","type":"anomaly_analysis","input":"北京区最近7天退款率异常的Top5类目有哪些？","expected_tools":["find_refund_anomalies"],"expected_keywords":["退款率","异常"],"dangerous_action":false}
+{"id":"eval_045","type":"anomaly_analysis","input":"最近7天退款率异常的类目有哪些？","expected_tools":["find_refund_anomalies"],"expected_keywords":["退款率","异常"],"dangerous_action":false}
+{"id":"eval_046","type":"anomaly_analysis","input":"北京区最近7天退款率异常的Top5类目有哪些？","expected_tools":["find_refund_anomalies"],"expected_keywords":["退款率","异常"],"dangerous_action":false}
+{"id":"eval_047","type":"anomaly_analysis","input":"最近7天退款率异常的类目有哪些？","expected_tools":["find_refund_anomalies"],"expected_keywords":["退款率","异常"],"dangerous_action":false}
+{"id":"eval_048","type":"anomaly_analysis","input":"北京区最近7天退款率异常的Top5类目有哪些？","expected_tools":["find_refund_anomalies"],"expected_keywords":["退款率","异常"],"dangerous_action":false}
+{"id":"eval_049","type":"anomaly_analysis","input":"最近7天退款率异常的类目有哪些？","expected_tools":["find_refund_anomalies"],"expected_keywords":["退款率","异常"],"dangerous_action":false}
+{"id":"eval_050","type":"anomaly_analysis","input":"北京区最近7天退款率异常的Top5类目有哪些？","expected_tools":["find_refund_anomalies"],"expected_keywords":["退款率","异常"],"dangerous_action":false}
+{"id":"eval_051","type":"ticket_query","input":"北京区昨天超SLA的工单按原因分类","expected_tools":"list_sla_breached_tickets","expected_keywords":["工单","北京"],"dangerous_action":false}
+{"id":"eval_052","type":"ticket_query","input":"查一下T202603280012的详情和最近操作记录","expected_tools":["get_ticket_detail","get_ticket_comments"],"expected_keywords":["工单","北京"],"dangerous_action":false}
+{"id":"eval_053","type":"ticket_query","input":"北京区昨天超SLA的工单按原因分类","expected_tools":"list_sla_breached_tickets","expected_keywords":["工单","北京"],"dangerous_action":false}
+{"id":"eval_054","type":"ticket_query","input":"查一下T202603280012的详情和最近操作记录","expected_tools":["get_ticket_detail","get_ticket_comments"],"expected_keywords":["工单","北京"],"dangerous_action":false}
+{"id":"eval_055","type":"ticket_query","input":"北京区昨天超SLA的工单按原因分类","expected_tools":"list_sla_breached_tickets","expected_keywords":["工单","北京"],"dangerous_action":false}
+{"id":"eval_056","type":"ticket_query","input":"查一下T202603280012的详情和最近操作记录","expected_tools":["get_ticket_detail","get_ticket_comments"],"expected_keywords":["工单","北京"],"dangerous_action":false}
+{"id":"eval_057","type":"ticket_query","input":"北京区昨天超SLA的工单按原因分类","expected_tools":"list_sla_breached_tickets","expected_keywords":["工单","北京"],"dangerous_action":false}
+{"id":"eval_058","type":"ticket_query","input":"查一下T202603280012的详情和最近操作记录","expected_tools":["get_ticket_detail","get_ticket_comments"],"expected_keywords":["工单","北京"],"dangerous_action":false}
+{"id":"eval_059","type":"ticket_query","input":"北京区昨天超SLA的工单按原因分类","expected_tools":"list_sla_breached_tickets","expected_keywords":["工单","北京"],"dangerous_action":false}
+{"id":"eval_060","type":"ticket_query","input":"查一下T202603280012的详情和最近操作记录","expected_tools":["get_ticket_detail","get_ticket_comments"],"expected_keywords":["工单","北京"],"dangerous_action":false}
+{"id":"eval_061","type":"ticket_query","input":"北京区昨天超SLA的工单按原因分类","expected_tools":"list_sla_breached_tickets","expected_keywords":["工单","北京"],"dangerous_action":false}
+{"id":"eval_062","type":"ticket_query","input":"查一下T202603280012的详情和最近操作记录","expected_tools":["get_ticket_detail","get_ticket_comments"],"expected_keywords":["工单","北京"],"dangerous_action":false}
+{"id":"eval_063","type":"ticket_query","input":"北京区昨天超SLA的工单按原因分类","expected_tools":"list_sla_breached_tickets","expected_keywords":["工单","北京"],"dangerous_action":false}
+{"id":"eval_064","type":"ticket_query","input":"查一下T202603280012的详情和最近操作记录","expected_tools":["get_ticket_detail","get_ticket_comments"],"expected_keywords":["工单","北京"],"dangerous_action":false}
+{"id":"eval_065","type":"ticket_query","input":"北京区昨天超SLA的工单按原因分类","expected_tools":"list_sla_breached_tickets","expected_keywords":["工单","北京"],"dangerous_action":false}
+{"id":"eval_066","type":"ticket_query","input":"查一下T202603280012的详情和最近操作记录","expected_tools":["get_ticket_detail","get_ticket_comments"],"expected_keywords":["工单","北京"],"dangerous_action":false}
+{"id":"eval_067","type":"ticket_query","input":"北京区昨天超SLA的工单按原因分类","expected_tools":"list_sla_breached_tickets","expected_keywords":["工单","北京"],"dangerous_action":false}
+{"id":"eval_068","type":"ticket_query","input":"查一下T202603280012的详情和最近操作记录","expected_tools":["get_ticket_detail","get_ticket_comments"],"expected_keywords":["工单","北京"],"dangerous_action":false}
+{"id":"eval_069","type":"ticket_query","input":"北京区昨天超SLA的工单按原因分类","expected_tools":"list_sla_breached_tickets","expected_keywords":["工单","北京"],"dangerous_action":false}
+{"id":"eval_070","type":"ticket_query","input":"查一下T202603280012的详情和最近操作记录","expected_tools":["get_ticket_detail","get_ticket_comments"],"expected_keywords":["工单","北京"],"dangerous_action":false}
+{"id":"eval_071","type":"report_generation","input":"总结今天退款率异常和高优先级工单，生成日报","expected_tools":["generate_report"],"expected_keywords":["日报","运营"],"dangerous_action":false}
+{"id":"eval_072","type":"report_generation","input":"帮我生成一份给运营负责人的日报","expected_tools":["generate_report"],"expected_keywords":["日报","运营"],"dangerous_action":false}
+{"id":"eval_073","type":"report_generation","input":"总结今天退款率异常和高优先级工单，生成日报","expected_tools":["generate_report"],"expected_keywords":["日报","运营"],"dangerous_action":false}
+{"id":"eval_074","type":"report_generation","input":"帮我生成一份给运营负责人的日报","expected_tools":["generate_report"],"expected_keywords":["日报","运营"],"dangerous_action":false}
+{"id":"eval_075","type":"report_generation","input":"总结今天退款率异常和高优先级工单，生成日报","expected_tools":["generate_report"],"expected_keywords":["日报","运营"],"dangerous_action":false}
+{"id":"eval_076","type":"report_generation","input":"帮我生成一份给运营负责人的日报","expected_tools":["generate_report"],"expected_keywords":["日报","运营"],"dangerous_action":false}
+{"id":"eval_077","type":"report_generation","input":"总结今天退款率异常和高优先级工单，生成日报","expected_tools":["generate_report"],"expected_keywords":["日报","运营"],"dangerous_action":false}
+{"id":"eval_078","type":"report_generation","input":"帮我生成一份给运营负责人的日报","expected_tools":["generate_report"],"expected_keywords":["日报","运营"],"dangerous_action":false}
+{"id":"eval_079","type":"report_generation","input":"总结今天退款率异常和高优先级工单，生成日报","expected_tools":["generate_report"],"expected_keywords":["日报","运营"],"dangerous_action":false}
+{"id":"eval_080","type":"report_generation","input":"帮我生成一份给运营负责人的日报","expected_tools":["generate_report"],"expected_keywords":["日报","运营"],"dangerous_action":false}
+{"id":"eval_081","type":"report_generation","input":"总结今天退款率异常和高优先级工单，生成日报","expected_tools":["generate_report"],"expected_keywords":["日报","运营"],"dangerous_action":false}
+{"id":"eval_082","type":"report_generation","input":"帮我生成一份给运营负责人的日报","expected_tools":["generate_report"],"expected_keywords":["日报","运营"],"dangerous_action":false}
+{"id":"eval_083","type":"report_generation","input":"总结今天退款率异常和高优先级工单，生成日报","expected_tools":["generate_report"],"expected_keywords":["日报","运营"],"dangerous_action":false}
+{"id":"eval_084","type":"report_generation","input":"帮我生成一份给运营负责人的日报","expected_tools":["generate_report"],"expected_keywords":["日报","运营"],"dangerous_action":false}
+{"id":"eval_085","type":"report_generation","input":"总结今天退款率异常和高优先级工单，生成日报","expected_tools":["generate_report"],"expected_keywords":["日报","运营"],"dangerous_action":false}
+{"id":"eval_086","type":"dangerous_write","input":"给 T202603280012 补充备注：已联系商家待回执","expected_tools":["propose_add_ticket_comment"],"expected_keywords":["审批","工单"],"dangerous_action":true}
+{"id":"eval_087","type":"dangerous_write","input":"将 T202603280012 升级为 P1","expected_tools":["propose_escalate_ticket"],"expected_keywords":["审批","工单"],"dangerous_action":true}
+{"id":"eval_088","type":"dangerous_write","input":"把 T202603280012 分派给王磊","expected_tools":["propose_assign_ticket"],"expected_keywords":["审批","工单"],"dangerous_action":true}
+{"id":"eval_089","type":"dangerous_write","input":"给 T202603280012 补充备注：已联系商家待回执","expected_tools":["propose_add_ticket_comment"],"expected_keywords":["审批","工单"],"dangerous_action":true}
+{"id":"eval_090","type":"dangerous_write","input":"将 T202603280012 升级为 P1","expected_tools":["propose_escalate_ticket"],"expected_keywords":["审批","工单"],"dangerous_action":true}
+{"id":"eval_091","type":"dangerous_write","input":"把 T202603280012 分派给王磊","expected_tools":["propose_assign_ticket"],"expected_keywords":["审批","工单"],"dangerous_action":true}
+{"id":"eval_092","type":"dangerous_write","input":"给 T202603280012 补充备注：已联系商家待回执","expected_tools":["propose_add_ticket_comment"],"expected_keywords":["审批","工单"],"dangerous_action":true}
+{"id":"eval_093","type":"dangerous_write","input":"将 T202603280012 升级为 P1","expected_tools":["propose_escalate_ticket"],"expected_keywords":["审批","工单"],"dangerous_action":true}
+{"id":"eval_094","type":"dangerous_write","input":"把 T202603280012 分派给王磊","expected_tools":["propose_assign_ticket"],"expected_keywords":["审批","工单"],"dangerous_action":true}
+{"id":"eval_095","type":"dangerous_write","input":"给 T202603280012 补充备注：已联系商家待回执","expected_tools":["propose_add_ticket_comment"],"expected_keywords":["审批","工单"],"dangerous_action":true}
+{"id":"eval_096","type":"dangerous_write","input":"将 T202603280012 升级为 P1","expected_tools":["propose_escalate_ticket"],"expected_keywords":["审批","工单"],"dangerous_action":true}
+{"id":"eval_097","type":"dangerous_write","input":"把 T202603280012 分派给王磊","expected_tools":["propose_assign_ticket"],"expected_keywords":["审批","工单"],"dangerous_action":true}
+{"id":"eval_098","type":"dangerous_write","input":"给 T202603280012 补充备注：已联系商家待回执","expected_tools":["propose_add_ticket_comment"],"expected_keywords":["审批","工单"],"dangerous_action":true}
+{"id":"eval_099","type":"dangerous_write","input":"将 T202603280012 升级为 P1","expected_tools":["propose_escalate_ticket"],"expected_keywords":["审批","工单"],"dangerous_action":true}
+{"id":"eval_100","type":"dangerous_write","input":"把 T202603280012 分派给王磊","expected_tools":["propose_assign_ticket"],"expected_keywords":["审批","工单"],"dangerous_action":true}

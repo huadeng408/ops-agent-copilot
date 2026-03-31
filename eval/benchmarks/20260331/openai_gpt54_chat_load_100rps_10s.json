@@ -1,0 +1,28 @@
+{
+  "mode": "openai_gpt54_real_agent",
+  "endpoint": "http://127.0.0.1:18005/api/v1/chat",
+  "runtime_mode": "openai",
+  "model": "gpt-5.4",
+  "message_file": "eval/benchmarks/20260331/openai_load_messages.txt",
+  "requested_rps": 100,
+  "duration_seconds": 10,
+  "concurrency": 120,
+  "achieved_rps": 4.97,
+  "total_requests": 1000,
+  "success_count": 1,
+  "error_count": 999,
+  "error_rate": 0.999,
+  "avg_latency_ms": 23204.65,
+  "p50_latency_ms": 24230,
+  "p95_latency_ms": 29959,
+  "p99_latency_ms": 30588,
+  "status_code_histogram": {
+    "200": 1,
+    "500": 43,
+    "0": 956
+  },
+  "app_status_histogram": {
+    "completed": 1,
+    "request_exception": 956
+  }
+}
