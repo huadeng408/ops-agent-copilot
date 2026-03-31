@@ -9,3 +9,4 @@ logs/
 *.sqlite3
 .run_*.pid
 pytest-cache-files-*/
+StudyStepByStep/
