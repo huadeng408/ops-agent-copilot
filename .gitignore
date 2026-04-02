@@ -6,6 +6,7 @@ __pycache__/
 logs/
 .venv/
 .vscode/
+.tmp/
 *.sqlite3
 .run_*.pid
 pytest-cache-files-*/

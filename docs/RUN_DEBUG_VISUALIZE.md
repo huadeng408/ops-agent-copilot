@@ -5,65 +5,93 @@
 If Docker Desktop is already running:
 
 ```powershell
-.\start.ps1
+.\start.ps1 -SkipLLMCheck
 ```
 
-Default behavior:
+Real behavior of the current startup flow:
 
-- auto-create or repair `.venv` when needed
-- auto-install `requirements.txt` dependencies when needed
-- start `mysql`, `redis`, `adminer`
-- run Alembic migrations
-- seed demo data
-- start FastAPI on `http://127.0.0.1:18000`
+- checks `go`
+- starts `mysql`, `redis`, `prometheus`, `grafana`, `jaeger`, `adminer`
+- optionally checks remote LLM connectivity
+- builds the Go server to `.tmp/ops-agent-go.exe`
+- seeds demo data through `go run ./cmd/seed`
+- starts the Go API on `http://127.0.0.1:18000`
 
 Useful options:
 
 ```powershell
 .\start.ps1 -Port 18001
-.\start.ps1 -SkipSeed
 .\start.ps1 -SkipDocker
-.\\start.ps1 -SkipInstall
-.\start.ps1 -NoReload
+.\start.ps1 -SkipSeed
+.\start.ps1 -SkipLLMCheck
+.\start.ps1 -SkipBuild
 ```
 
-## Virtual environment
+Notes:
 
-Activation is optional because `start.ps1` uses `.venv\Scripts\python.exe` directly.
-
-If you still want to activate it manually in PowerShell:
-
-```powershell
-Set-ExecutionPolicy -Scope Process Bypass
-.\.venv\Scripts\Activate.ps1
-```
+- `-NoReload` is now a compatibility no-op because the online service is no longer Python reload mode.
+- `-SkipMigrate` is now a compatibility no-op because schema bootstrap is handled by Go startup and seeding.
+- `-SkipInstall` is now a compatibility no-op for the online path. Python is only needed for offline eval and load test scripts.
 
 ## Manual startup
 
-```bash
-pip install -r requirements.txt
+```powershell
 docker compose up -d
-python -m alembic upgrade head
-python -m scripts.init_demo_data
-python -m scripts.run_api --host 127.0.0.1 --port 18000 --reload
+go run ./cmd/seed
+$env:HOST='127.0.0.1'
+$env:PORT='18000'
+$env:AGENT_RUNTIME_MODE='heuristic'
+$env:OTEL_ENABLED='true'
+$env:OTEL_EXPORTER_OTLP_ENDPOINT='http://127.0.0.1:4318'
+go run ./cmd/server
 ```
+
+## Stable interview demo
+
+Run the closed-loop interview demo:
+
+```powershell
+.\scripts\interview_demo.ps1
+```
+
+The script covers:
+
+- readonly chat query
+- proposal creation for a write action
+- approval execution
+- audit lookup
+- ticket detail verification
 
 ## Debug locally
 
-Use VS Code launch configs in `.vscode/launch.json`.
+Use VS Code launch configs or attach to the Go process.
 
-Best places for breakpoints:
+Good breakpoint locations:
 
-- `app/services/agent_service.py`
-- `app/agents/planner_agent.py`
-- `app/services/llm_service.py`
-- `app/services/tool_registry.py`
+- `cmd/server/main.go`
+- `internal/app/http.go`
+- `internal/app/agent.go`
+- `internal/app/service_support.go`
+- `internal/app/tool_registry.go`
+- `internal/app/approval.go`
+- `internal/app/telemetry.go`
+
+If you want to debug the planner decision:
+
+- set `AGENT_RUNTIME_MODE=heuristic` to inspect deterministic routing
+- set `AGENT_RUNTIME_MODE=auto` plus valid OpenAI-compatible config to inspect planner fallback to remote LLM
 
 ## Visualize data
 
+Current entry points:
+
 - Admin page: `http://127.0.0.1:18000/admin`
-- Swagger UI: `http://127.0.0.1:18000/docs`
-- ReDoc: `http://127.0.0.1:18000/redoc`
+- Docs page: `http://127.0.0.1:18000/docs`
+- Health: `http://127.0.0.1:18000/healthz`
+- Metrics: `http://127.0.0.1:18000/metrics`
+- Prometheus: `http://127.0.0.1:19090`
+- Grafana: `http://127.0.0.1:13000`
+- Jaeger: `http://127.0.0.1:16686`
 - Adminer: `http://127.0.0.1:18081`
 
 Adminer connection:
@@ -77,7 +105,17 @@ Adminer connection:
 Useful tables:
 
 - `tickets`
+- `ticket_comments`
 - `ticket_actions`
 - `approvals`
 - `audit_logs`
 - `tool_call_logs`
+
+## What to show in an interview
+
+If the interviewer asks for a quick run-through, prioritize these pages:
+
+1. `/docs` to show the online API surface is real.
+2. `/admin` to show approvals and audit logs are queryable.
+3. `/metrics` to show Prometheus metrics exist.
+4. Jaeger to show traces exist when `OTEL_ENABLED=true`.

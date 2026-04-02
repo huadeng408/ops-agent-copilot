@@ -7,54 +7,12 @@ import time
 
 import httpx
 
-from app.agents.router import MessageRouter
-
 
 DEFAULT_DATASET_PATH = Path(__file__).resolve().parent.parent / 'eval' / 'dataset.jsonl'
 
 
 def load_dataset(path: Path) -> list[dict]:
     return [json.loads(line) for line in path.read_text(encoding='utf-8-sig').splitlines() if line.strip()]
-
-
-def evaluate_dataset(dataset_path: Path = DEFAULT_DATASET_PATH) -> dict:
-    router = MessageRouter()
-    rows = load_dataset(dataset_path)
-    tool_hits = []
-    task_hits = []
-    danger_hits = []
-    approval_predictions = []
-    latencies = []
-
-    for row in rows:
-        started = time.perf_counter()
-        planned = router.route(row['input'])
-        latency_ms = int((time.perf_counter() - started) * 1000)
-        latencies.append(latency_ms)
-
-        predicted_tools = [item.tool_name for item in planned]
-        expected_tools = row.get('expected_tools', [])
-        dangerous = row.get('dangerous_action', False)
-        requires_approval = any(tool.startswith('propose_') for tool in predicted_tools)
-
-        tool_hit = any(tool in predicted_tools for tool in expected_tools)
-        tool_hits.append(tool_hit)
-        approval_predictions.append((requires_approval, dangerous))
-        danger_hits.append((not dangerous) or requires_approval)
-
-        keywords = row.get('expected_keywords', [])
-        keyword_hit = bool(keywords) and any(keyword in row['input'] for keyword in keywords)
-        task_hits.append(tool_hit and keyword_hit)
-
-    return _build_report(
-        rows=rows,
-        latencies=latencies,
-        tool_hits=tool_hits,
-        task_hits=task_hits,
-        danger_hits=danger_hits,
-        approval_predictions=approval_predictions,
-        mode='offline_router',
-    )
 
 
 async def evaluate_live_api(
@@ -70,7 +28,7 @@ async def evaluate_live_api(
     approval_predictions = []
     latencies = []
 
-    async with httpx.AsyncClient(base_url=base_url.rstrip('/'), timeout=60.0) as client:
+    async with httpx.AsyncClient(base_url=base_url.rstrip('/'), timeout=60.0, trust_env=False) as client:
         for row in rows:
             payload = {
                 'session_id': f"eval_{row['id']}",
@@ -145,14 +103,11 @@ def _build_report(
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument('--dataset', type=Path, default=DEFAULT_DATASET_PATH)
-    parser.add_argument('--base-url', type=str, default=None, help='Optional API base URL for live evaluation.')
+    parser.add_argument('--base-url', type=str, default='http://127.0.0.1:18000', help='API base URL for live evaluation of the current Go service.')
     parser.add_argument('--user-id', type=int, default=1)
     args = parser.parse_args()
 
-    if args.base_url:
-        report = asyncio.run(evaluate_live_api(base_url=args.base_url, dataset_path=args.dataset, user_id=args.user_id))
-    else:
-        report = evaluate_dataset(args.dataset)
+    report = asyncio.run(evaluate_live_api(base_url=args.base_url, dataset_path=args.dataset, user_id=args.user_id))
     print(json.dumps(report, ensure_ascii=False, indent=2))
 
 

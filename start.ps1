@@ -6,18 +6,18 @@ param(
     [switch]$SkipMigrate,
     [switch]$SkipDocker,
     [switch]$SkipInstall,
-    [switch]$SkipLLMCheck
+    [switch]$SkipLLMCheck,
+    [switch]$SkipBuild
 )
 
 $ErrorActionPreference = 'Stop'
 Set-Location $PSScriptRoot
 
-$VenvDir = Join-Path $PSScriptRoot '.venv'
-$PythonExe = Join-Path $VenvDir 'Scripts\python.exe'
-$ActivateScript = Join-Path $VenvDir 'Scripts\Activate.ps1'
-$RequirementsFile = Join-Path $PSScriptRoot 'requirements.txt'
-$DepsStamp = Join-Path $VenvDir '.deps_installed'
-$SystemPython = 'python'
+$GoExe = (Get-Command go -ErrorAction Stop).Source
+$BuildDir = Join-Path $PSScriptRoot '.tmp'
+$ServerExe = Join-Path $BuildDir 'ops-agent-go.exe'
+$EnvFile = Join-Path $PSScriptRoot '.env'
+$AuthFile = Join-Path $PSScriptRoot 'auth.json'
 
 function Invoke-Step {
     param(
@@ -29,98 +29,119 @@ function Invoke-Step {
     & $Action
 }
 
-function Test-VenvHealthy {
-    if (-not (Test-Path $PythonExe)) {
-        return $false
+function Get-DotEnvValue {
+    param([string]$Key)
+
+    if (-not (Test-Path $EnvFile)) {
+        return $null
     }
 
-    if (-not (Test-Path $ActivateScript)) {
-        return $false
+    foreach ($line in Get-Content $EnvFile) {
+        $trimmed = $line.Trim()
+        if (-not $trimmed -or $trimmed.StartsWith('#')) {
+            continue
+        }
+        $parts = $trimmed -split '=', 2
+        if ($parts.Count -ne 2) {
+            continue
+        }
+        if ($parts[0].Trim() -ieq $Key) {
+            return $parts[1].Trim()
+        }
     }
 
-    & $PythonExe -m pip --version *> $null
-    return $LASTEXITCODE -eq 0
+    return $null
 }
 
-function Test-DependenciesInstalled {
-    if (-not (Test-Path $PythonExe)) {
-        return $false
+function Get-ResolvedSetting {
+    param(
+        [string]$Key,
+        [string]$Default = ''
+    )
+
+    $fromEnv = [Environment]::GetEnvironmentVariable($Key)
+    if ($fromEnv) {
+        return $fromEnv
     }
 
-    & $PythonExe -c "import fastapi, uvicorn, sqlalchemy, alembic, redis, httpx" *> $null
-    return $LASTEXITCODE -eq 0
+    $fromDotEnv = Get-DotEnvValue -Key $Key
+    if ($fromDotEnv) {
+        return $fromDotEnv
+    }
+
+    return $Default
+}
+
+function Get-ResolvedOpenAIKey {
+    $key = Get-ResolvedSetting -Key 'OPENAI_API_KEY'
+    if ($key) {
+        return $key
+    }
+
+    if (Test-Path $AuthFile) {
+        try {
+            $payload = Get-Content $AuthFile -Raw | ConvertFrom-Json
+            if ($payload.OPENAI_API_KEY) {
+                return [string]$payload.OPENAI_API_KEY
+            }
+        } catch {
+        }
+    }
+
+    return ''
+}
+
+function Test-RealOpenAIKey {
+    param([string]$ApiKey)
+
+    $placeholders = @('', 'sk-test', 'sk-xxx', 'your_openai_api_key_here', 'your-openai-api-key')
+    return -not ($placeholders -contains $ApiKey.Trim())
 }
 
 function Test-LLMConnectivity {
-    $llmCheckScript = @'
-import asyncio
-import sys
+    $mode = Get-ResolvedSetting -Key 'AGENT_RUNTIME_MODE' -Default 'auto'
+    if ($mode -eq 'heuristic') {
+        Write-Host 'Skipping LLM preflight because AGENT_RUNTIME_MODE=heuristic.' -ForegroundColor Yellow
+        return
+    }
 
-from app.core.config import Settings
-from app.services.llm_service import LLMService
+    $baseUrl = Get-ResolvedSetting -Key 'OPENAI_BASE_URL' -Default 'https://api.moonshot.cn/v1'
+    $model = Get-ResolvedSetting -Key 'OPENAI_MODEL' -Default 'kimi-k2-0905-preview'
+    $apiKey = Get-ResolvedOpenAIKey
 
+    if (-not (Test-RealOpenAIKey -ApiKey $apiKey)) {
+        throw 'LLM preflight failed: OPENAI_API_KEY is still a placeholder. Fix .env or auth.json, or rerun with -SkipLLMCheck.'
+    }
 
-async def main() -> int:
-    settings = Settings()
-    api_key = settings.openai_api_key.strip()
-    placeholders = {'', 'sk-test', 'sk-xxx', 'your_openai_api_key_here', 'your-openai-api-key'}
-    if api_key in placeholders:
-        print(f'LLM_KEY_MISSING: OPENAI_API_KEY is still a placeholder: {api_key!r}')
-        return 2
-
-    service = LLMService(settings)
-    try:
-        result = await service.responses_create(
-            input_items=[{'role': 'user', 'content': 'ping'}],
-            instructions='Return a tiny acknowledgement.',
+    $uri = ($baseUrl.TrimEnd('/')) + '/chat/completions'
+    $body = @{
+        model = $model
+        messages = @(
+            @{
+                role = 'user'
+                content = 'ping'
+            }
         )
-    except Exception as exc:
-        print(f'LLM_CHECK_FAILED: {exc}')
-        return 3
+    } | ConvertTo-Json -Depth 5
 
-    print('LLM_CHECK_OK')
-    if isinstance(result, dict):
-        print(f'LLM_CHECK_RESULT_KEYS: {sorted(result.keys())}')
-    return 0
+    $headers = @{
+        Authorization = "Bearer $apiKey"
+        'Content-Type' = 'application/json'
+    }
 
-
-raise SystemExit(asyncio.run(main()))
-'@
-
-    & $PythonExe -c $llmCheckScript
-    return $LASTEXITCODE -eq 0
+    Invoke-RestMethod -Method Post -Uri $uri -Headers $headers -Body $body | Out-Null
 }
 
-if (-not (Test-VenvHealthy)) {
-    Invoke-Step 'Bootstrapping virtual environment' {
-        & $SystemPython -m venv .venv --upgrade-deps
-    }
+if ($NoReload) {
+    Write-Host '-NoReload is now a no-op because the Go main service runs as a compiled binary.' -ForegroundColor Yellow
 }
 
-if (-not $SkipInstall) {
-    $needInstall = -not (Test-DependenciesInstalled)
-
-    if (-not $needInstall -and (Test-Path $DepsStamp)) {
-        $needInstall = (Get-Item $RequirementsFile).LastWriteTimeUtc -gt (Get-Item $DepsStamp).LastWriteTimeUtc
-    } elseif (-not $needInstall) {
-        Set-Content -Path $DepsStamp -Value (Get-Date).ToString('o')
-    }
-
-    if ($needInstall) {
-        Invoke-Step 'Installing Python dependencies' {
-            & $PythonExe -m pip install -r $RequirementsFile
-        }
-
-        Set-Content -Path $DepsStamp -Value (Get-Date).ToString('o')
-    }
+if ($SkipMigrate) {
+    Write-Host '-SkipMigrate is now a no-op because schema bootstrap is handled by Go startup / seed.' -ForegroundColor Yellow
 }
 
-if (-not $SkipLLMCheck) {
-    Invoke-Step 'Checking LLM key and provider connectivity' {
-        if (-not (Test-LLMConnectivity)) {
-            throw 'LLM preflight check failed. Fix OPENAI_API_KEY / OPENAI_BASE_URL, or rerun with -SkipLLMCheck.'
-        }
-    }
+if ($SkipInstall) {
+    Write-Host '-SkipInstall is now a no-op for the Go main service. Python is only needed for offline eval/load scripts.' -ForegroundColor Yellow
 }
 
 if (-not $SkipDocker) {
@@ -128,28 +149,37 @@ if (-not $SkipDocker) {
         docker version | Out-Null
     }
 
-    Invoke-Step 'Starting mysql / redis / adminer' {
+    Invoke-Step 'Starting mysql / redis / prometheus / grafana / jaeger' {
         docker compose up -d
     }
 }
 
-if (-not $SkipMigrate) {
-    Invoke-Step 'Running alembic migrations' {
-        & $PythonExe -m alembic upgrade head
+if (-not $SkipLLMCheck) {
+    Invoke-Step 'Checking LLM connectivity' {
+        Test-LLMConnectivity
+    }
+}
+
+if (-not (Test-Path $BuildDir)) {
+    New-Item -ItemType Directory -Path $BuildDir | Out-Null
+}
+
+if (-not $SkipBuild -or -not (Test-Path $ServerExe)) {
+    Invoke-Step 'Building Go server binary' {
+        & $GoExe build -o $ServerExe .\cmd\server
     }
 }
 
 if (-not $SkipSeed) {
-    Invoke-Step 'Seeding demo data' {
-        & $PythonExe -m scripts.init_demo_data
+    Invoke-Step 'Seeding demo data with Go bootstrap' {
+        & $GoExe run .\cmd\seed
     }
 }
 
-$pythonArgs = @('-m', 'scripts.run_api', '--host', $BindHost, '--port', [string]$Port)
-if (-not $NoReload) {
-    $pythonArgs += '--reload'
+$env:HOST = $BindHost
+$env:PORT = [string]$Port
+
+Invoke-Step "Starting Go API on http://$BindHost`:$Port" {
+    & $ServerExe
 }
 
-Invoke-Step "Starting API on http://$BindHost`:$Port" {
-    & $PythonExe @pythonArgs
-}

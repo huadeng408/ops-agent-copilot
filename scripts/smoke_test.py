@@ -4,7 +4,7 @@ import httpx
 
 
 async def main() -> None:
-    async with httpx.AsyncClient(base_url='http://127.0.0.1:8000', timeout=20) as client:
+    async with httpx.AsyncClient(base_url='http://127.0.0.1:18000', timeout=20, trust_env=False) as client:
         health = await client.get('/healthz')
         print('healthz:', health.status_code, health.json())
         chat = await client.post(

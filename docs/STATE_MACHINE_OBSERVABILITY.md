@@ -2,7 +2,7 @@
 
 ## Approval state machine
 
-Approval lifecycle now uses a constrained state machine:
+Approval lifecycle uses a constrained state machine:
 
 - `pending -> approved -> executed`
 - `pending -> rejected`
@@ -10,32 +10,28 @@ Approval lifecycle now uses a constrained state machine:
 
 Key guarantees:
 
-- `approvals.idempotency_key` is unique and reused for duplicate pending proposals
-- `approvals.version` enables optimistic locking
-- `ticket_actions.approval_id` is unique, preventing duplicate write execution
-- repeated `approve` on an already executed approval returns the same persisted `execution_result`
+- `approvals.idempotency_key` suppresses duplicate pending proposals
+- `approvals.version` supports optimistic locking during concurrent approval
+- `ticket_actions.approval_id` prevents duplicate business execution
+- repeated `approve` on an already executed approval returns the same persisted result
 - rejected approvals cannot be approved later
 
-Related files:
+Related Go files:
 
-- `app/services/approval_service.py`
-- `app/services/approval_state_machine.py`
-- `app/db/models.py`
-- `app/db/migrations/versions/0002_approval_state_machine.py`
+- `internal/app/approval.go`
+- `internal/app/repository_approval.go`
+- `internal/app/repository_ticket.go`
+- `internal/app/schema.go`
 
-## Offline and live evaluation
+## Live evaluation
 
-Offline evaluation:
-
-```powershell
-python -m scripts.run_eval
-```
-
-Live API evaluation:
+Supported path for the current system:
 
 ```powershell
 python -m scripts.run_eval --base-url http://127.0.0.1:18000
 ```
+
+This evaluates the live Go API directly and is the only supported evaluation path after the Python online stack cleanup.
 
 Reported metrics:
 
@@ -67,6 +63,11 @@ The report includes:
 - p50 / p95 latency
 - status code histogram
 
+Important interpretation rule:
+
+- heuristic / deterministic path benchmark results can support the Go online baseline story
+- synchronous remote LLM planner results should be presented separately because they are the current bottleneck
+
 ## Metrics and tracing
 
 Start the observability stack:
@@ -78,7 +79,6 @@ docker compose up -d prometheus grafana jaeger
 Application side:
 
 ```env
-METRICS_ENABLED=true
 OTEL_ENABLED=true
 OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318
 ```
@@ -95,21 +95,19 @@ Grafana default credentials:
 - username: `admin`
 - password: `admin`
 
-Tracked business metrics:
+Tracked business metrics include:
 
 - `ops_agent_chat_latency_ms`
 - `ops_agent_tool_latency_ms`
 - `ops_agent_approval_turnaround_seconds`
 - `ops_agent_verifier_rejections_total`
 - `ops_agent_llm_fallback_total`
+- `ops_agent_planner_requests_total`
+- `ops_agent_planner_latency_ms`
 
 ## Operational anomaly analysis
 
-New tool:
-
-- `analyze_operational_anomaly`
-
-Example prompt:
+Representative prompt:
 
 ```text
 北京区昨天退款率异常和超SLA工单做一下归因分析
@@ -117,8 +115,8 @@ Example prompt:
 
 The tool correlates:
 
-- refund spikes vs. 7-day baseline
+- refund spikes against recent baseline
 - SLA breach distribution by root cause and category
-- nearby releases in the anomaly time window
+- nearby release records in the anomaly window
 
-This produces a semi-automated correlation summary instead of only raw query output.
+This is intentionally designed as a semi-automated analysis chain instead of free-form LLM narration only.

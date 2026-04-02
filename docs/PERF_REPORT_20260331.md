@@ -49,11 +49,11 @@ Source: `eval/benchmarks/20260331/chat_load_200rps_30s.json`
 - Throughput increases from `74.37` to `80.64` when load target rises from `100` to `200` RPS, while latency rises sharply.
 - This indicates the current single-instance setup is approaching saturation and queueing under bursty chat traffic.
 
-## Resume-ready phrasing
+## Resume-safe phrasing
 
-- Completed real `/api/v1/chat` load tests at `100/200 RPS` for 30s with mixed operational workloads; achieved `74.37/80.64` effective RPS and maintained `99.3%+` success rate.
-- Quantified latency under pressure (`100 RPS: p95 2.27s`, `200 RPS: p95 3.36s`) and identified single-instance saturation characteristics for future scaling decisions.
-- Built benchmark artifacts and reproducible scripts (`scripts/run_load_test.py`, JSON reports) to support performance baselining and regression tracking.
+- Completed real `/api/v1/chat` load tests for the heuristic / deterministic path on a single instance and observed `74.37/80.64` achieved RPS under `100/200` target RPS workloads with `99.3%+` success rate.
+- Quantified latency under pressure (`100 RPS: p95 2.27s`, `200 RPS: p95 3.36s`) and identified single-instance saturation and queueing behavior for follow-up scaling work.
+- Built reproducible benchmark artifacts (`scripts/run_load_test.py`, JSON reports) and separated deterministic-path baselines from remote-LLM planner bottleneck analysis.
 
 ## Repro commands
 
