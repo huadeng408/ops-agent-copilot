@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -11,7 +13,29 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 )
 
-const plannerSystemPrompt = "你是企业运营 Copilot 的工具规划器。你只能通过 function calling 选择工具，不要直接回答最终业务内容。对于写操作必须选择 propose_* 工具，不允许直接执行真实业务写入。"
+const plannerSystemPrompt = `你是企业运营 Copilot 的工具规划器。
+你的唯一任务是选择工具，不要直接回答业务结论。
+
+硬性规则：
+1. 第一条回复必须是 function call，不要输出自然语言，不要解释，不要道歉，不要追问。
+2. 如果提供了 Heuristic tool hints，优先复用第一条 hint 的 tool_name 和 arguments；除非它与最新用户请求明显冲突，否则直接照抄。
+3. 优先只调用一个工具；只有用户明确要求组合归因时才调用 analyze_operational_anomaly。
+4. 对写请求只能调用 propose_* 工具，绝不能直接执行真实业务写入。
+5. 参数键名必须严格匹配工具 schema；不要添加额外字段；枚举值必须使用 schema 中的原值。
+6. 只有用户明确提到“日报”“周报”“report”时，才能调用 generate_report。
+7. 如果 heuristic hint 已经给出了所需参数，不允许再追问用户。
+8. 绝不要返回空回复。`
+
+const ollamaPlannerSystemPrompt = `You are a tool router for an operations copilot.
+Return a tool call only. Never answer with prose.
+
+Rules:
+1. Your first response must be a function call.
+2. If the conversation includes "Preferred tool call", call that tool with those arguments unless it clearly contradicts the latest user request.
+3. If heuristic hints are present, prefer the first hint.
+4. Do not ask follow-up questions when the preferred tool call already includes arguments.
+5. Use exactly the tool name and argument keys from the schema.
+6. Prefer one tool call.`
 
 type AuditService struct {
 	repo *AuditRepository
@@ -456,19 +480,51 @@ func (s *PlannerService) Plan(ctx context.Context, message string, memory map[st
 	)
 
 	started := time.Now()
-	heuristicCalls := s.router.Route(message, memory)
-	useHeuristic := s.cfg.AgentRuntimeMode == "heuristic" || !s.cfg.HasRealOpenAIAPIKey()
+	routeAnalysis := s.router.Analyze(message, memory)
+	if strings.EqualFold(strings.TrimSpace(os.Getenv("ROUTER_DISABLE_FAST_PATH")), "true") {
+		routeAnalysis.FastPath = nil
+	}
+	heuristicCalls := routeAnalysis.Fallback
+	useHeuristic := s.cfg.AgentRuntimeMode == "heuristic" || !s.cfg.HasUsableLLMConfig()
 	if useHeuristic {
+		source := "heuristic_router"
+		if len(routeAnalysis.FastPath) > 0 {
+			source = "l0_rule_router"
+			heuristicCalls = routeAnalysis.FastPath
+		}
 		latencyMS := int(time.Since(started).Milliseconds())
-		s.metrics.RecordPlanner("heuristic_router", latencyMS)
+		s.metrics.RecordPlanner(source, latencyMS)
 		span.SetAttributes(
-			attribute.String("planner.source", "heuristic_router"),
+			attribute.String("planner.source", source),
 			attribute.Int("planner.latency_ms", latencyMS),
 		)
-		return PlannerResult{Calls: heuristicCalls, Source: "heuristic_router", LatencyMS: latencyMS}, nil
+		return PlannerResult{Calls: heuristicCalls, Source: source, LatencyMS: latencyMS}, nil
 	}
 
-	cacheKey := "planner:" + HashKey(message, MustJSON(memory))
+	if len(routeAnalysis.FastPath) > 0 {
+		latencyMS := int(time.Since(started).Milliseconds())
+		s.metrics.RecordPlanner("l0_rule_router", latencyMS)
+		span.SetAttributes(
+			attribute.String("planner.source", "l0_rule_router"),
+			attribute.Int("planner.latency_ms", latencyMS),
+		)
+		return PlannerResult{Calls: routeAnalysis.FastPath, Source: "l0_rule_router", LatencyMS: latencyMS}, nil
+	}
+
+	selectedSchemas, includeGenerateReport := selectSchemasForRouteDecision(message, routeAnalysis.Hints, s.registry.ListSchemas())
+	cachePayload := map[string]any{
+		"message":          message,
+		"memory_state":     compactMemoryState(memory),
+		"recent_turns":     compactRecentTurns(memory, s.cfg.RouterRecentMessageCount),
+		"hints":            routeAnalysis.Hints,
+		"schemas":          selectedSchemas,
+		"include_report":   includeGenerateReport,
+		"strong_only":      routeAnalysis.RequiresStrongModel,
+		"primary_model":    s.cfg.RouterPrimaryModel,
+		"fallback_model":   s.cfg.RouterFallbackModel,
+		"confidence_cutoff": s.cfg.RouterConfidenceCutoff,
+	}
+	cacheKey := "planner:" + HashKey(MustJSON(cachePayload))
 	var cached []PlannedToolCall
 	if s.cache != nil && s.cache.GetJSON(ctx, cacheKey, &cached) && len(cached) > 0 {
 		latencyMS := int(time.Since(started).Milliseconds())
@@ -484,49 +540,95 @@ func (s *PlannerService) Plan(ctx context.Context, message string, memory map[st
 	s.metrics.RecordPlannerCache(false)
 	span.SetAttributes(attribute.Bool("planner.cache_hit", false))
 
-	inputItems := buildPlannerInput(message, memory, heuristicCalls)
-	tools := buildPlannerTools(s.registry.ListSchemas())
-	response, err := s.llm.ResponsesCreate(ctx, inputItems, tools, plannerSystemPrompt, true)
-	if err != nil {
-		if s.cfg.AgentRuntimeMode == "openai" {
-			RecordSpanError(span, err)
-			return PlannerResult{}, err
+	runRouteModel := func(model string, strongModel bool) ([]PlannedToolCall, RouteDecision, string, error) {
+		inputItems := buildRouteInput(message, memory, routeAnalysis.Hints, s.cfg.RouterRecentMessageCount, strongModel)
+		tools := buildRouteDecisionTools(selectedSchemas, includeGenerateReport)
+		source := routeTraceLabel(model)
+		response, err := s.llm.ResponsesCreateWithOptions(
+			ctx,
+			inputItems,
+			tools,
+			buildRouteSystemPrompt(s.cfg.RouterNoThink, strongModel),
+			false,
+			LLMRequestOptions{Model: model},
+		)
+		if err != nil {
+			return nil, RouteDecision{}, source, err
 		}
-		s.metrics.RecordLLMFallback("planner_exception")
+		decision, ok := parseRouteDecision(response)
+		if !ok {
+			return nil, RouteDecision{}, source, nil
+		}
+		calls, ok := routeDecisionToPlannedCalls(decision, s.registry, routeAnalysis.Hints, message)
+		if !ok {
+			return nil, decision, source, nil
+		}
+		return calls, decision, source, nil
+	}
+
+	source := ""
+	finalCalls := []PlannedToolCall(nil)
+
+	if !routeAnalysis.RequiresStrongModel {
+		primaryCalls, decision, primarySource, err := runRouteModel(s.cfg.RouterPrimaryModel, false)
+		if err != nil {
+			if s.cfg.AgentRuntimeMode == "llm" {
+				RecordSpanError(span, err)
+				return PlannerResult{}, err
+			}
+			s.metrics.RecordLLMFallback("l1_exception")
+		} else if !shouldEscalateToStrongModel(decision, s.cfg, primaryCalls) {
+			source = primarySource
+			finalCalls = primaryCalls
+		} else {
+			s.metrics.RecordLLMFallback(describeRouteFailure(decision, primaryCalls))
+		}
+	}
+
+	if len(finalCalls) == 0 {
+		if strings.EqualFold(strings.TrimSpace(s.cfg.RouterPrimaryModel), strings.TrimSpace(s.cfg.RouterFallbackModel)) && !routeAnalysis.RequiresStrongModel {
+			if s.cfg.AgentRuntimeMode == "llm" {
+				err := NewValidation("route decision failed and strong fallback model is identical to the primary router model")
+				RecordSpanError(span, err)
+				return PlannerResult{}, err
+			}
+		} else {
+			fallbackCalls, _, fallbackSource, err := runRouteModel(s.cfg.RouterFallbackModel, true)
+			if err != nil {
+				if s.cfg.AgentRuntimeMode == "llm" {
+					RecordSpanError(span, err)
+					return PlannerResult{}, err
+				}
+				s.metrics.RecordLLMFallback("l2_exception")
+			} else if len(fallbackCalls) > 0 {
+				source = fallbackSource
+				finalCalls = fallbackCalls
+			}
+		}
+	}
+
+	if len(finalCalls) == 0 {
 		latencyMS := int(time.Since(started).Milliseconds())
 		s.metrics.RecordPlanner("heuristic_router", latencyMS)
 		span.SetAttributes(
 			attribute.String("planner.source", "heuristic_router"),
 			attribute.Int("planner.latency_ms", latencyMS),
 		)
-		span.AddEvent("planner_fallback_exception")
+		span.AddEvent("planner_fallback_heuristic")
 		return PlannerResult{Calls: heuristicCalls, Source: "heuristic_router", LatencyMS: latencyMS}, nil
 	}
 
-	plannedCalls := parsePlannedCalls(response)
-	if len(plannedCalls) == 0 {
-		s.metrics.RecordLLMFallback("empty_plan")
-		latencyMS := int(time.Since(started).Milliseconds())
-		s.metrics.RecordPlanner("heuristic_router", latencyMS)
-		span.SetAttributes(
-			attribute.String("planner.source", "heuristic_router"),
-			attribute.Int("planner.latency_ms", latencyMS),
-		)
-		span.AddEvent("planner_fallback_empty_plan")
-		return PlannerResult{Calls: heuristicCalls, Source: "heuristic_router", LatencyMS: latencyMS}, nil
-	}
-	merged := mergeWithHeuristic(plannedCalls, heuristicCalls)
 	if s.cache != nil {
-		s.cache.SetJSON(ctx, cacheKey, merged, 10*time.Minute)
+		s.cache.SetJSON(ctx, cacheKey, finalCalls, 10*time.Minute)
 	}
 	latencyMS := int(time.Since(started).Milliseconds())
-	s.metrics.RecordPlanner("llm_planner", latencyMS)
+	s.metrics.RecordPlanner(source, latencyMS)
 	span.SetAttributes(
-		attribute.String("planner.source", "llm_planner"),
+		attribute.String("planner.source", source),
 		attribute.Int("planner.latency_ms", latencyMS),
-		attribute.Int("planner.call_count", len(merged)),
+		attribute.Int("planner.call_count", len(finalCalls)),
 	)
-	return PlannerResult{Calls: merged, Source: "llm_planner", LatencyMS: latencyMS}, nil
+	return PlannerResult{Calls: finalCalls, Source: source, LatencyMS: latencyMS}, nil
 }
 
 func buildPlannerInput(message string, memory map[string]any, hints []PlannedToolCall) []map[string]any {
@@ -560,8 +662,72 @@ func buildPlannerInput(message string, memory map[string]any, hints []PlannedToo
 	return result
 }
 
-func buildPlannerTools(schemas []ToolSchema) []map[string]any {
+func buildPlannerInputForOllama(message string, memory map[string]any, hints []PlannedToolCall) []map[string]any {
+	result := make([]map[string]any, 0, 3)
+	contextParts := make([]string, 0, 4)
+	if len(hints) == 0 {
+		if summary := strings.TrimSpace(asString(memory["summary"])); summary != "" {
+			contextParts = append(contextParts, "Conversation summary:\n"+summary)
+		}
+		if memoryState, ok := memory["memory_state"].(map[string]any); ok && len(memoryState) > 0 {
+			contextParts = append(contextParts, "Session memory JSON:\n"+MustJSON(memoryState))
+		}
+		if messages, ok := memory["messages"].([]map[string]any); ok && len(messages) > 0 {
+			recentLines := make([]string, 0, len(messages))
+			for _, item := range messages {
+				text := strings.TrimSpace(asString(item["text"]))
+				if text == "" {
+					continue
+				}
+				role := asString(item["role"])
+				if role == "" {
+					role = "user"
+				}
+				recentLines = append(recentLines, role+": "+text)
+			}
+			if len(recentLines) > 0 {
+				contextParts = append(contextParts, "Recent turns:\n"+strings.Join(recentLines, "\n"))
+			}
+		}
+	}
+	if len(hints) > 0 {
+		contextParts = append(contextParts, "Heuristic tool hints. Prefer the first hint and copy its arguments exactly:\n"+MustJSON(hints))
+	}
+	if len(contextParts) > 0 {
+		result = append(result, map[string]any{
+			"role":    "system",
+			"content": strings.Join(contextParts, "\n\n"),
+		})
+	}
+	userContent := "Latest user request:\n" + strings.TrimSpace(message)
+	if len(hints) > 0 {
+		firstHint := hints[0]
+		userContent += "\n\nPreferred tool call:\n" +
+			"tool_name=" + firstHint.ToolName + "\n" +
+			"arguments_json=" + MustJSON(firstHint.Arguments) + "\n\n" +
+			"Call the preferred tool now unless it clearly conflicts with the latest user request."
+	}
+	result = append(result, map[string]any{
+		"role":    "user",
+		"content": userContent + "\n\nReturn tool call(s) now.",
+	})
+	return result
+}
+
+func buildPlannerToolsForProvider(provider string, message string, hints []PlannedToolCall, schemas []ToolSchema) []map[string]any {
+	includeGenerateReport := isExplicitReportRequest(message)
+	selectedSchemas := schemas
+	if provider == "ollama" {
+		selectedSchemas, includeGenerateReport = selectSchemasForOllamaPlanner(message, hints, schemas)
+	}
+	return buildPlannerTools(selectedSchemas, includeGenerateReport)
+}
+
+func buildPlannerTools(schemas []ToolSchema, includeGenerateReport bool) []map[string]any {
 	result := make([]map[string]any, 0, len(schemas)+1)
+	sort.Slice(schemas, func(i int, j int) bool {
+		return schemas[i].Name < schemas[j].Name
+	})
 	for _, schema := range schemas {
 		parameters := schema.Parameters
 		if parameters["type"] == "object" {
@@ -576,44 +742,137 @@ func buildPlannerTools(schemas []ToolSchema) []map[string]any {
 		result = append(result, map[string]any{
 			"type":        "function",
 			"name":        schema.Name,
-			"description": schema.Description,
+			"description": plannerToolDescription(schema.Name, schema.Description),
 			"parameters":  parameters,
 		})
 	}
-	result = append(result, map[string]any{
-		"type":        "function",
-		"name":        "generate_report",
-		"description": "生成运营日报或周报",
-		"parameters": map[string]any{
-			"type":                 "object",
-			"additionalProperties": false,
-			"properties": map[string]any{
-				"report_type": map[string]any{"type": "string", "enum": []string{"daily"}},
+	if includeGenerateReport {
+		result = append(result, map[string]any{
+			"type":        "function",
+			"name":        "generate_report",
+			"description": plannerToolDescription("generate_report", "生成运营日报或周报"),
+			"parameters": map[string]any{
+				"type":                 "object",
+				"additionalProperties": false,
+				"properties": map[string]any{
+					"report_type": map[string]any{"type": "string", "enum": []string{"daily"}},
+				},
+				"required": []string{"report_type"},
 			},
-			"required": []string{"report_type"},
-		},
-	})
-	return result
-}
-
-func parsePlannedCalls(response map[string]any) []PlannedToolCall {
-	output, _ := response["output"].([]any)
-	result := make([]PlannedToolCall, 0)
-	for _, item := range output {
-		call, _ := item.(map[string]any)
-		if asString(call["type"]) != "function_call" {
-			continue
-		}
-		arguments := map[string]any{}
-		if rawArguments := asString(call["arguments"]); strings.TrimSpace(rawArguments) != "" {
-			_ = json.Unmarshal([]byte(rawArguments), &arguments)
-		}
-		result = append(result, PlannedToolCall{
-			ToolName:  asString(call["name"]),
-			Arguments: arguments,
 		})
 	}
 	return result
+}
+
+func plannerSystemPromptFor(provider string) string {
+	if provider == "ollama" {
+		return ollamaPlannerSystemPrompt
+	}
+	return plannerSystemPrompt
+}
+
+func plannerToolDescription(name string, description string) string {
+	routingHints := map[string]string{
+		"query_refund_metrics":        "适用于查询退款率指标、退款率最高类目、指定区域/类目的退款率表现。Use for refund metric lookup.",
+		"find_refund_anomalies":       "适用于退款率异常、异常类目、异常区域。Use for refund anomaly detection.",
+		"list_sla_breached_tickets":   "适用于超SLA工单查询。按原因分类 -> group_by=root_cause；按优先级 -> priority；按类目/分类 -> category；按处理人 -> assignee_name.",
+		"get_ticket_detail":           "适用于查询单个工单详情。Use for ticket detail lookup.",
+		"get_ticket_comments":         "适用于查询工单备注、评论、最近操作记录。Use for comments and recent actions.",
+		"get_recent_releases":         "适用于查询最近发布记录。Use for recent release lookup.",
+		"analyze_operational_anomaly": "仅在用户明确要求归因分析，且问题同时涉及退款率、超SLA工单、发布影响时使用。",
+		"run_readonly_sql":            "仅在用户明确要求SQL查询时使用，并且必须是只读白名单SQL。",
+		"propose_assign_ticket":       "写请求专用。适用于把工单分派给某人，只能生成 proposal。",
+		"propose_add_ticket_comment":  "写请求专用。适用于给工单添加备注，只能生成 proposal。",
+		"propose_escalate_ticket":     "写请求专用。适用于升级工单优先级，只能生成 proposal。",
+		"generate_report":             "只在用户明确要求日报、周报、report时使用。Never use as fallback for generic analysis or lookup.",
+	}
+	if hint, ok := routingHints[name]; ok {
+		return description + "。路由提示：" + hint
+	}
+	return description
+}
+
+func selectSchemasForOllamaPlanner(message string, hints []PlannedToolCall, schemas []ToolSchema) ([]ToolSchema, bool) {
+	schemaByName := make(map[string]ToolSchema, len(schemas))
+	for _, schema := range schemas {
+		schemaByName[schema.Name] = schema
+	}
+
+	includeGenerateReport := isExplicitReportRequest(message)
+	if len(hints) == 0 {
+		filtered := make([]ToolSchema, 0, len(schemas))
+		for _, schema := range schemas {
+			if schema.Name == "generate_report" {
+				continue
+			}
+			filtered = append(filtered, schema)
+		}
+		return filtered, includeGenerateReport
+	}
+
+	selected := make([]ToolSchema, 0, len(hints))
+	seen := make(map[string]bool, len(hints))
+	for _, hint := range hints {
+		if hint.ToolName == "generate_report" {
+			includeGenerateReport = true
+			continue
+		}
+		if seen[hint.ToolName] {
+			continue
+		}
+		schema, ok := schemaByName[hint.ToolName]
+		if !ok {
+			continue
+		}
+		selected = append(selected, schema)
+		seen[hint.ToolName] = true
+	}
+	if len(selected) > 0 || includeGenerateReport {
+		return selected, includeGenerateReport
+	}
+	return schemas, false
+}
+
+func isExplicitReportRequest(message string) bool {
+	lower := strings.ToLower(message)
+	return strings.Contains(message, "日报") || strings.Contains(message, "周报") || strings.Contains(lower, "report")
+}
+
+func parsePlannedCalls(response map[string]any) []PlannedToolCall {
+	result := make([]PlannedToolCall, 0)
+	switch output := response["output"].(type) {
+	case []any:
+		for _, item := range output {
+			call, _ := item.(map[string]any)
+			if planned, ok := parsePlannedCall(call); ok {
+				result = append(result, planned)
+			}
+		}
+	case []map[string]any:
+		for _, call := range output {
+			if planned, ok := parsePlannedCall(call); ok {
+				result = append(result, planned)
+			}
+		}
+	}
+	return result
+}
+
+func parsePlannedCall(call map[string]any) (PlannedToolCall, bool) {
+	if call == nil {
+		return PlannedToolCall{}, false
+	}
+	if asString(call["type"]) != "function_call" {
+		return PlannedToolCall{}, false
+	}
+	arguments := map[string]any{}
+	if rawArguments := asString(call["arguments"]); strings.TrimSpace(rawArguments) != "" {
+		_ = json.Unmarshal([]byte(rawArguments), &arguments)
+	}
+	return PlannedToolCall{
+		ToolName:  asString(call["name"]),
+		Arguments: arguments,
+	}, true
 }
 
 func mergeWithHeuristic(planned []PlannedToolCall, heuristic []PlannedToolCall) []PlannedToolCall {

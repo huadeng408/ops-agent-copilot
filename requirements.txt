@@ -1,2 +1,6 @@
-# Python is retained only for evaluation / load-test helpers.
+# Python is retained for LangGraph orchestration and offline helpers.
+fastapi==0.118.0
 httpx==0.28.1
+langchain-openai==0.3.35
+langgraph==0.6.8
+uvicorn==0.37.0

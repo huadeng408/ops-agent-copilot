@@ -15,28 +15,53 @@ type PlannedToolCall struct {
 	Arguments map[string]any `json:"arguments"`
 }
 
+type RouteAnalysis struct {
+	FastPath            []PlannedToolCall
+	Hints               []PlannedToolCall
+	Fallback            []PlannedToolCall
+	RequiresStrongModel bool
+}
+
 type MessageRouter struct{}
 
-func (r *MessageRouter) Route(message string, memory map[string]any) []PlannedToolCall {
+func (r *MessageRouter) Analyze(message string, memory map[string]any) RouteAnalysis {
 	memoryState, _ := memory["memory_state"].(map[string]any)
-	if r.shouldAnalyzeOperationalAnomaly(message) {
-		return []PlannedToolCall{r.parseOperationalAnomaly(message, memoryState)}
+	fastPath := r.fastPath(message, memoryState)
+	hints := r.hints(message, memoryState)
+	fallback := fastPath
+	if len(fallback) == 0 {
+		if len(hints) > 0 {
+			fallback = hints
+		} else {
+			fallback = []PlannedToolCall{{ToolName: "generate_report", Arguments: map[string]any{"report_type": "daily"}}}
+		}
 	}
-	if strings.Contains(message, "分派给") {
+	return RouteAnalysis{
+		FastPath:            fastPath,
+		Hints:               hints,
+		Fallback:            fallback,
+		RequiresStrongModel: r.shouldAnalyzeOperationalAnomaly(message),
+	}
+}
+
+func (r *MessageRouter) Route(message string, memory map[string]any) []PlannedToolCall {
+	return r.Analyze(message, memory).Fallback
+}
+
+func (r *MessageRouter) fastPath(message string, memoryState map[string]any) []PlannedToolCall {
+	switch {
+	case strings.Contains(message, "分派给"):
 		return []PlannedToolCall{r.parseAssign(message, memoryState)}
-	}
-	if strings.Contains(message, "备注") && (strings.Contains(message, "补充") || strings.Contains(message, "添加")) {
+	case strings.Contains(message, "备注") && (strings.Contains(message, "补充") || strings.Contains(message, "添加")):
 		return []PlannedToolCall{r.parseAddComment(message, memoryState)}
-	}
-	if strings.Contains(message, "升级") && regexp.MustCompile(`\bP[123]\b`).MatchString(message) {
+	case strings.Contains(message, "升级") && regexp.MustCompile(`\bP[123]\b`).MatchString(message):
 		return []PlannedToolCall{r.parseEscalate(message, memoryState)}
-	}
-	if strings.Contains(message, "日报") || strings.Contains(message, "周报") {
+	case strings.Contains(message, "日报") || strings.Contains(message, "周报"):
 		return []PlannedToolCall{{ToolName: "generate_report", Arguments: map[string]any{"report_type": "daily"}}}
-	}
-	if strings.Contains(message, "超") && strings.Contains(strings.ToUpper(message), "SLA") {
+	case strings.Contains(message, "超") && strings.Contains(strings.ToUpper(message), "SLA") && !r.shouldAnalyzeOperationalAnomaly(message):
 		return []PlannedToolCall{r.parseSLAQuery(message, memoryState)}
 	}
+
 	ticketNo := r.extractTicketNo(message, memoryState)
 	if ticketNo != "" && (strings.Contains(message, "详情") || strings.Contains(message, "操作记录")) {
 		calls := []PlannedToolCall{{ToolName: "get_ticket_detail", Arguments: map[string]any{"ticket_no": ticketNo}}}
@@ -45,8 +70,24 @@ func (r *MessageRouter) Route(message string, memory map[string]any) []PlannedTo
 		}
 		return calls
 	}
-	if strings.Contains(message, "发布") {
+	if strings.Contains(message, "发布") && !r.shouldAnalyzeOperationalAnomaly(message) {
 		return []PlannedToolCall{{ToolName: "get_recent_releases", Arguments: map[string]any{}}}
+	}
+	if strings.Contains(message, "退款率") && strings.Contains(message, "异常") && !r.shouldAnalyzeOperationalAnomaly(message) {
+		return []PlannedToolCall{r.parseRefundAnomaly(message, memoryState)}
+	}
+	if strings.Contains(message, "退款率") && !r.shouldAnalyzeOperationalAnomaly(message) {
+		return []PlannedToolCall{r.parseRefundMetric(message, memoryState)}
+	}
+	return nil
+}
+
+func (r *MessageRouter) hints(message string, memoryState map[string]any) []PlannedToolCall {
+	if direct := r.fastPath(message, memoryState); len(direct) > 0 {
+		return direct
+	}
+	if r.shouldAnalyzeOperationalAnomaly(message) {
+		return []PlannedToolCall{r.parseOperationalAnomaly(message, memoryState)}
 	}
 	if strings.Contains(message, "退款率") && strings.Contains(message, "异常") {
 		return []PlannedToolCall{r.parseRefundAnomaly(message, memoryState)}
@@ -54,7 +95,7 @@ func (r *MessageRouter) Route(message string, memory map[string]any) []PlannedTo
 	if strings.Contains(message, "退款率") {
 		return []PlannedToolCall{r.parseRefundMetric(message, memoryState)}
 	}
-	return []PlannedToolCall{{ToolName: "generate_report", Arguments: map[string]any{"report_type": "daily"}}}
+	return nil
 }
 
 func (r *MessageRouter) parseRefundAnomaly(message string, memoryState map[string]any) PlannedToolCall {
@@ -126,15 +167,19 @@ func (r *MessageRouter) parseAssign(message string, memoryState map[string]any) 
 		Arguments: map[string]any{
 			"ticket_no":     ticketNo,
 			"assignee_name": assigneeName,
-			"reason":        "根据用户指令将 " + ticketNo + " 分派给 " + assigneeName,
+			"reason":        "根据用户指令将" + ticketNo + "分派给" + assigneeName,
 		},
 	}
 }
 
 func (r *MessageRouter) parseAddComment(message string, memoryState map[string]any) PlannedToolCall {
 	ticketNo := r.extractTicketNo(message, memoryState)
-	commentText := strings.TrimSpace(strings.Trim(strings.SplitN(message, "备注", 2)[1], " ：:"))
-	match := regexp.MustCompile(`备注[:：]\s*(.+)$`).FindStringSubmatch(message)
+	commentText := ""
+	parts := strings.SplitN(message, "备注", 2)
+	if len(parts) == 2 {
+		commentText = strings.TrimSpace(strings.Trim(parts[1], " ：:"))
+	}
+	match := regexp.MustCompile(`备注[:：]?\s*(.+)$`).FindStringSubmatch(message)
 	if len(match) > 1 {
 		commentText = strings.TrimSpace(match[1])
 	}
@@ -143,7 +188,7 @@ func (r *MessageRouter) parseAddComment(message string, memoryState map[string]a
 		Arguments: map[string]any{
 			"ticket_no":    ticketNo,
 			"comment_text": commentText,
-			"reason":       "根据用户指令为 " + ticketNo + " 增加备注",
+			"reason":       "根据用户指令为" + ticketNo + "增加备注",
 		},
 	}
 }
@@ -160,7 +205,7 @@ func (r *MessageRouter) parseEscalate(message string, memoryState map[string]any
 		Arguments: map[string]any{
 			"ticket_no":    ticketNo,
 			"new_priority": priority,
-			"reason":       "根据用户指令将 " + ticketNo + " 升级为 " + priority,
+			"reason":       "根据用户指令将" + ticketNo + "升级为" + priority,
 		},
 	}
 }
@@ -221,7 +266,7 @@ func (r *MessageRouter) extractTopK(message string, defaultValue int) int {
 func (r *MessageRouter) extractDateRange(message string, memoryState map[string]any) (string, string) {
 	today := time.Now().Format("2006-01-02")
 	now, _ := time.Parse("2006-01-02", today)
-	if strings.Contains(message, "最近7天") || strings.Contains(message, "最近 7 天") {
+	if strings.Contains(message, "最近7天") || strings.Contains(message, "最近七天") {
 		return now.AddDate(0, 0, -6).Format("2006-01-02"), now.Format("2006-01-02")
 	}
 	if strings.Contains(message, "上周") {
@@ -277,7 +322,7 @@ func (r *MessageRouter) shouldAnalyzeOperationalAnomaly(message string) bool {
 }
 
 func (r *MessageRouter) isFollowupReference(message string) bool {
-	keywords := []string{"他", "它", "这个工单", "该工单", "刚才", "刚刚", "上一个", "那个", "继续"}
+	keywords := []string{"它", "他", "这个工单", "该工单", "刚才", "刚刚", "上一个", "那个", "继续"}
 	for _, keyword := range keywords {
 		if strings.Contains(message, keyword) {
 			return true

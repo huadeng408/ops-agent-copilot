@@ -137,9 +137,10 @@ type ToolCallLog struct {
 }
 
 type ChatRequest struct {
-	SessionID string `json:"session_id"`
-	UserID    int64  `json:"user_id"`
-	Message   string `json:"message"`
+	SessionID   string `json:"session_id"`
+	UserID      int64  `json:"user_id"`
+	Message     string `json:"message"`
+	RuntimeMode string `json:"runtime_mode,omitempty"`
 }
 
 type ToolCallSummary struct {

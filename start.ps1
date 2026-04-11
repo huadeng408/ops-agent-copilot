@@ -17,7 +17,6 @@ $GoExe = (Get-Command go -ErrorAction Stop).Source
 $BuildDir = Join-Path $PSScriptRoot '.tmp'
 $ServerExe = Join-Path $BuildDir 'ops-agent-go.exe'
 $EnvFile = Join-Path $PSScriptRoot '.env'
-$AuthFile = Join-Path $PSScriptRoot 'auth.json'
 
 function Invoke-Step {
     param(
@@ -72,15 +71,70 @@ function Get-ResolvedSetting {
     return $Default
 }
 
-function Get-ResolvedOpenAIKey {
-    $key = Get-ResolvedSetting -Key 'OPENAI_API_KEY'
+function Get-ResolvedSettingAny {
+    param(
+        [string[]]$Keys,
+        [string]$Default = ''
+    )
+
+    foreach ($key in $Keys) {
+        $value = Get-ResolvedSetting -Key $key
+        if ($value) {
+            return $value
+        }
+    }
+
+    return $Default
+}
+
+function Get-ResolvedLLMProvider {
+    $provider = (Get-ResolvedSettingAny -Keys @('LLM_PROVIDER') -Default '').Trim().ToLower()
+    if ($provider) {
+        if ($provider -eq 'openai') {
+            return 'kimi'
+        }
+        if (@('kimi', 'ollama') -notcontains $provider) {
+            throw "Unsupported LLM_PROVIDER='$provider'. Only 'kimi' and 'ollama' are allowed."
+        }
+        return $provider
+    }
+
+    $model = (Get-ResolvedSettingAny -Keys @('LLM_MODEL', 'OPENAI_MODEL') -Default '').Trim().ToLower()
+    if ($model.StartsWith('gemma4')) {
+        return 'ollama'
+    }
+    $baseUrl = (Get-ResolvedSettingAny -Keys @('LLM_BASE_URL', 'OPENAI_BASE_URL') -Default '').Trim().ToLower()
+    if ($baseUrl.Contains(':11434')) {
+        return 'ollama'
+    }
+    return 'kimi'
+}
+
+function Get-ResolvedLLMAuthFile {
+    param([string]$Provider)
+
+    if ($Provider -eq 'ollama') {
+        return Get-ResolvedSettingAny -Keys @('LLM_AUTH_FILE') -Default ''
+    }
+
+    return Get-ResolvedSettingAny -Keys @('LLM_AUTH_FILE', 'OPENAI_AUTH_FILE') -Default 'auth.json'
+}
+
+function Get-ResolvedLLMKey {
+    param([string]$Provider)
+
+    $key = Get-ResolvedSettingAny -Keys @('LLM_API_KEY', 'OPENAI_API_KEY')
     if ($key) {
         return $key
     }
 
-    if (Test-Path $AuthFile) {
+    $authFile = Get-ResolvedLLMAuthFile -Provider $Provider
+    if ($authFile -and (Test-Path $authFile)) {
         try {
-            $payload = Get-Content $AuthFile -Raw | ConvertFrom-Json
+            $payload = Get-Content $authFile -Raw | ConvertFrom-Json
+            if ($payload.LLM_API_KEY) {
+                return [string]$payload.LLM_API_KEY
+            }
             if ($payload.OPENAI_API_KEY) {
                 return [string]$payload.OPENAI_API_KEY
             }
@@ -88,29 +142,67 @@ function Get-ResolvedOpenAIKey {
         }
     }
 
+    if ($Provider -eq 'ollama') {
+        return 'ollama-local'
+    }
+
     return ''
 }
 
-function Test-RealOpenAIKey {
-    param([string]$ApiKey)
+function Get-ResolvedLLMBaseUrl {
+    param([string]$Provider)
 
-    $placeholders = @('', 'sk-test', 'sk-xxx', 'your_openai_api_key_here', 'your-openai-api-key')
+    $default = if ($Provider -eq 'ollama') { 'http://127.0.0.1:11434/v1' } else { 'https://api.moonshot.cn/v1' }
+    return Get-ResolvedSettingAny -Keys @('LLM_BASE_URL', 'OPENAI_BASE_URL') -Default $default
+}
+
+function Get-ResolvedLLMModel {
+    param([string]$Provider)
+
+    $default = if ($Provider -eq 'ollama') { 'gemma4:e4b' } else { 'kimi-k2-0905-preview' }
+    return Get-ResolvedSettingAny -Keys @('LLM_MODEL', 'OPENAI_MODEL') -Default $default
+}
+
+function Normalize-RuntimeMode {
+    param([string]$Mode)
+
+    switch ($Mode.Trim().ToLower()) {
+        'langgraph' { return 'langgraph' }
+        'openai' { return 'llm' }
+        'llm' { return 'llm' }
+        'heuristic' { return 'heuristic' }
+        Default { return 'auto' }
+    }
+}
+
+function Test-RealLLMKey {
+    param(
+        [string]$Provider,
+        [string]$ApiKey
+    )
+
+    if ($Provider -eq 'ollama') {
+        return $true
+    }
+
+    $placeholders = @('', 'sk-test', 'sk-xxx', 'your_openai_api_key_here', 'your-openai-api-key', 'your_llm_api_key_here', 'your-llm-api-key')
     return -not ($placeholders -contains $ApiKey.Trim())
 }
 
 function Test-LLMConnectivity {
-    $mode = Get-ResolvedSetting -Key 'AGENT_RUNTIME_MODE' -Default 'auto'
+    $mode = Normalize-RuntimeMode (Get-ResolvedSetting -Key 'AGENT_RUNTIME_MODE' -Default 'auto')
     if ($mode -eq 'heuristic') {
         Write-Host 'Skipping LLM preflight because AGENT_RUNTIME_MODE=heuristic.' -ForegroundColor Yellow
         return
     }
 
-    $baseUrl = Get-ResolvedSetting -Key 'OPENAI_BASE_URL' -Default 'https://api.moonshot.cn/v1'
-    $model = Get-ResolvedSetting -Key 'OPENAI_MODEL' -Default 'kimi-k2-0905-preview'
-    $apiKey = Get-ResolvedOpenAIKey
+    $provider = Get-ResolvedLLMProvider
+    $baseUrl = Get-ResolvedLLMBaseUrl -Provider $provider
+    $model = Get-ResolvedLLMModel -Provider $provider
+    $apiKey = Get-ResolvedLLMKey -Provider $provider
 
-    if (-not (Test-RealOpenAIKey -ApiKey $apiKey)) {
-        throw 'LLM preflight failed: OPENAI_API_KEY is still a placeholder. Fix .env or auth.json, or rerun with -SkipLLMCheck.'
+    if (-not (Test-RealLLMKey -Provider $provider -ApiKey $apiKey)) {
+        throw 'LLM preflight failed: LLM_API_KEY is still a placeholder. Fix .env or auth.json, or rerun with -SkipLLMCheck.'
     }
 
     $uri = ($baseUrl.TrimEnd('/')) + '/chat/completions'
@@ -140,8 +232,13 @@ if ($SkipMigrate) {
     Write-Host '-SkipMigrate is now a no-op because schema bootstrap is handled by Go startup / seed.' -ForegroundColor Yellow
 }
 
-if ($SkipInstall) {
-    Write-Host '-SkipInstall is now a no-op for the Go main service. Python is only needed for offline eval/load scripts.' -ForegroundColor Yellow
+$RuntimeMode = Normalize-RuntimeMode (Get-ResolvedSetting -Key 'AGENT_RUNTIME_MODE' -Default 'auto')
+$UseLangGraph = $RuntimeMode -eq 'langgraph'
+$PythonExe = $null
+$LangGraphProcess = $null
+
+if ($SkipInstall -and -not $UseLangGraph) {
+    Write-Host '-SkipInstall is now a no-op for the Go main service. Python is only needed for LangGraph runtime or offline scripts.' -ForegroundColor Yellow
 }
 
 if (-not $SkipDocker) {
@@ -157,6 +254,16 @@ if (-not $SkipDocker) {
 if (-not $SkipLLMCheck) {
     Invoke-Step 'Checking LLM connectivity' {
         Test-LLMConnectivity
+    }
+}
+
+if ($UseLangGraph) {
+    $PythonExe = (Get-Command python -ErrorAction Stop).Source
+
+    if (-not $SkipInstall) {
+        Invoke-Step 'Installing Python runtime dependencies for LangGraph' {
+            & $PythonExe -m pip install -r requirements.txt
+        }
     }
 }
 
@@ -178,8 +285,31 @@ if (-not $SkipSeed) {
 
 $env:HOST = $BindHost
 $env:PORT = [string]$Port
+$env:OPS_AGENT_BASE_URL = "http://127.0.0.1:$Port"
 
-Invoke-Step "Starting Go API on http://$BindHost`:$Port" {
-    & $ServerExe
+if ($UseLangGraph) {
+    $langGraphHost = Get-ResolvedSetting -Key 'LANGGRAPH_HOST' -Default '127.0.0.1'
+    $langGraphPort = Get-ResolvedSetting -Key 'LANGGRAPH_PORT' -Default '8001'
+    if (-not (Get-ResolvedSetting -Key 'LANGGRAPH_BASE_URL')) {
+        $env:LANGGRAPH_BASE_URL = "http://$langGraphHost`:$langGraphPort"
+    }
+
+    Invoke-Step "Starting LangGraph API on http://$langGraphHost`:$langGraphPort" {
+        $LangGraphProcess = Start-Process -FilePath $PythonExe -ArgumentList @(
+            '-m', 'uvicorn', 'langgraph_runtime.app:app',
+            '--host', $langGraphHost,
+            '--port', $langGraphPort
+        ) -WorkingDirectory $PSScriptRoot -PassThru
+        Start-Sleep -Seconds 2
+    }
 }
 
+Invoke-Step "Starting Go API on http://$BindHost`:$Port" {
+    try {
+        & $ServerExe
+    } finally {
+        if ($LangGraphProcess -and -not $LangGraphProcess.HasExited) {
+            Stop-Process -Id $LangGraphProcess.Id -Force
+        }
+    }
+}

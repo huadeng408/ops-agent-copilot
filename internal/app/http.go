@@ -21,6 +21,7 @@ type Application struct {
 	Cache   *CacheService
 	Metrics *MetricsRecorder
 	LLM     *LLMService
+	LangG   *LangGraphClient
 	Router  http.Handler
 }
 
@@ -35,6 +36,7 @@ func NewApplication(cfg Config, db *sqlx.DB) *Application {
 		Cache:   cache,
 		Metrics: metrics,
 		LLM:     llm,
+		LangG:   NewLangGraphClient(cfg),
 	}
 	app.Router = app.buildRouter()
 	return app
@@ -67,6 +69,12 @@ func (a *Application) buildRouter() http.Handler {
 		r.Post("/approvals/{approval_no}/reject", a.handleRejectApproval)
 		r.Get("/audit", a.handleAudit)
 		r.Get("/tickets/{ticket_no}", a.handleTicketDetail)
+	})
+	router.Route("/internal/v1", func(r chi.Router) {
+		r.Use(a.internalAuthMiddleware)
+		r.Post("/tool-invoke", a.handleInternalToolInvoke)
+		r.Post("/proposals", a.handleInternalCreateProposal)
+		r.Post("/reports/daily", a.handleInternalDailyReport)
 	})
 	return WrapHandlerWithTelemetry(router)
 }
@@ -122,9 +130,14 @@ type requestScope struct {
 	plannerService  *PlannerService
 	approvalService *ApprovalService
 	agentService    *AgentService
+	langGraphChat   *LangGraphChatService
 }
 
 func (a *Application) newRequestScope(db DBTX) *requestScope {
+	return a.newRequestScopeWithConfig(db, a.Config)
+}
+
+func (a *Application) newRequestScopeWithConfig(db DBTX, cfg Config) *requestScope {
 	userRepo := NewUserRepository(db)
 	sessionRepo := NewSessionRepository(db)
 	ticketRepo := NewTicketRepository(db)
@@ -134,11 +147,11 @@ func (a *Application) newRequestScope(db DBTX) *requestScope {
 	auditRepo := NewAuditRepository(db)
 	auditService := NewAuditService(auditRepo)
 	verifier := NewVerifierService(ticketRepo, a.Metrics, NewSQLGuard())
-	memoryService := NewMemoryService(sessionRepo, a.Cache, a.Config.KeepRecentMessageCount)
+	memoryService := NewMemoryService(sessionRepo, a.Cache, cfg.KeepRecentMessageCount)
 	reportService := NewReportService(metricRepo, ticketRepo, releaseRepo)
 	anomalyService := NewAnomalyService(metricRepo, ticketRepo, releaseRepo)
 	toolRegistry := BuildDefaultToolRegistry(auditService, a.Metrics)
-	plannerService := NewPlannerService(a.Config, a.Cache, a.LLM, toolRegistry, a.Metrics)
+	plannerService := NewPlannerService(cfg, a.Cache, a.LLM, toolRegistry, a.Metrics)
 	approvalService := NewApprovalService(approvalRepo, ticketRepo, userRepo, verifier, auditService, a.Metrics)
 	baseToolContext := ToolContext{
 		MetricRepo:     metricRepo,
@@ -147,9 +160,10 @@ func (a *Application) newRequestScope(db DBTX) *requestScope {
 		Verifier:       verifier,
 		AnomalyService: anomalyService,
 		DB:             db,
-		Config:         a.Config,
+		Config:         cfg,
 	}
-	agentService := NewAgentService(a.Config, sessionRepo, auditService, memoryService, toolRegistry, approvalService, reportService, plannerService, a.Metrics, baseToolContext)
+	agentService := NewAgentService(cfg, sessionRepo, auditService, memoryService, toolRegistry, approvalService, reportService, plannerService, a.Metrics, baseToolContext)
+	langGraphChat := NewLangGraphChatService(cfg, sessionRepo, auditService, memoryService, a.LangG, a.Metrics)
 	return &requestScope{
 		userRepo:        userRepo,
 		sessionRepo:     sessionRepo,
@@ -167,6 +181,7 @@ func (a *Application) newRequestScope(db DBTX) *requestScope {
 		plannerService:  plannerService,
 		approvalService: approvalService,
 		agentService:    agentService,
+		langGraphChat:   langGraphChat,
 	}
 }
 
@@ -176,7 +191,30 @@ func (a *Application) handleChat(w http.ResponseWriter, r *http.Request) {
 		WriteError(w, NewValidation("请求体格式不合法"))
 		return
 	}
-	a.withTx(w, r, func(ctx context.Context, _ *sqlx.Tx, scope *requestScope) error {
+
+	cfg := a.Config
+	if strings.TrimSpace(payload.RuntimeMode) != "" {
+		cfg.AgentRuntimeMode = normalizeRuntimeMode(payload.RuntimeMode)
+	}
+
+	if cfg.UseLangGraphRuntime() {
+		scope := a.newRequestScopeWithConfig(a.DB, cfg)
+		user, err := scope.userRepo.GetByID(r.Context(), payload.UserID)
+		if err != nil {
+			WriteError(w, err)
+			return
+		}
+		response, err := scope.langGraphChat.HandleChat(r.Context(), payload.SessionID, *user, payload.Message)
+		if err != nil {
+			WriteError(w, err)
+			return
+		}
+		RespondJSON(w, http.StatusOK, response)
+		return
+	}
+
+	a.withTx(w, r, func(ctx context.Context, tx *sqlx.Tx, _ *requestScope) error {
+		scope := a.newRequestScopeWithConfig(tx, cfg)
 		user, err := scope.userRepo.GetByID(ctx, payload.UserID)
 		if err != nil {
 			return err

@@ -22,7 +22,7 @@ Python remains in the repository only for offline evaluation and load-testing sc
 
 1. `POST /api/v1/chat` receives user input and injects a `trace_id`.
 2. Session state and recent messages are loaded through the Go repositories and memory service.
-3. `PlannerService` decides whether to use the heuristic router or the optional OpenAI-compatible planner path.
+3. `PlannerService` decides whether to use the heuristic router or the optional Kimi / Ollama planner path.
 4. `ToolRegistry` executes readonly tools directly or converts write intent into `propose_*` calls.
 5. Proposal tools create approval records with `pending` status instead of mutating business state.
 6. `POST /api/v1/approvals/{approval_no}/approve` re-validates the payload and executes the deterministic business action.

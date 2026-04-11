@@ -37,6 +37,22 @@ func (r *ToolRegistry) ListSchemas() []ToolSchema {
 	return result
 }
 
+func (r *ToolRegistry) SchemaByName(name string) (ToolSchema, bool) {
+	tool, ok := r.tools[name]
+	if !ok {
+		return ToolSchema{}, false
+	}
+	return tool.Schema(), true
+}
+
+func (r *ToolRegistry) ToolTypeByName(name string) (string, bool) {
+	tool, ok := r.tools[name]
+	if !ok {
+		return "", false
+	}
+	return tool.ToolType(), true
+}
+
 func (r *ToolRegistry) Invoke(ctx context.Context, name string, toolContext ToolContext, arguments map[string]any) (ToolResult, ToolExecutionRecord, error) {
 	tool, ok := r.tools[name]
 	if !ok {
@@ -114,7 +130,7 @@ func (t queryRefundMetricsTool) Schema() ToolSchema {
 				"region":     map[string]any{"type": "string", "enum": regions},
 				"category":   map[string]any{"type": "string", "enum": categories},
 			},
-			"required": []string{"start_date", "end_date", "region", "category"},
+			"required": []string{"start_date", "end_date"},
 		},
 	}
 }
@@ -149,7 +165,7 @@ func (t findRefundAnomaliesTool) Schema() ToolSchema {
 				"region":     map[string]any{"type": "string", "enum": regions},
 				"top_k":      map[string]any{"type": "integer", "default": 5},
 			},
-			"required": []string{"start_date", "end_date", "region", "top_k"},
+			"required": []string{"start_date", "end_date"},
 		},
 	}
 }
@@ -183,7 +199,7 @@ func (t listSLABreachedTicketsTool) Schema() ToolSchema {
 				"date":     map[string]any{"type": "string"},
 				"group_by": map[string]any{"type": "string", "enum": []string{"root_cause", "priority", "category", "assignee_name"}},
 			},
-			"required": []string{"region", "date", "group_by"},
+			"required": []string{"date"},
 		},
 	}
 }

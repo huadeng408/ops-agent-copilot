@@ -79,7 +79,7 @@ Good breakpoint locations:
 If you want to debug the planner decision:
 
 - set `AGENT_RUNTIME_MODE=heuristic` to inspect deterministic routing
-- set `AGENT_RUNTIME_MODE=auto` plus valid OpenAI-compatible config to inspect planner fallback to remote LLM
+- set `AGENT_RUNTIME_MODE=auto` plus a valid Kimi or Ollama config to inspect planner fallback from LLM to heuristic routing
 
 ## Visualize data
 

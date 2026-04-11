@@ -23,14 +23,21 @@ async def run_load_test(
     concurrency: int,
     user_id: int,
     messages: list[str],
+    timeout_seconds: float,
+    runtime_mode: str | None,
+    llm_percent: int,
 ) -> dict:
     semaphore = asyncio.Semaphore(concurrency)
     latencies: list[int] = []
     status_codes: list[int] = []
     app_statuses: list[str] = []
+    request_runtime_modes: list[str] = []
+    planning_sources: list[str] = []
+    planner_latencies: list[int] = []
+    tool_call_counts: list[int] = []
     started = time.perf_counter()
 
-    async with httpx.AsyncClient(base_url=base_url.rstrip('/'), timeout=20.0, trust_env=False) as client:
+    async with httpx.AsyncClient(base_url=base_url.rstrip('/'), timeout=timeout_seconds, trust_env=False) as client:
         tasks = []
         total_requests = rps * duration_seconds
         for index in range(total_requests):
@@ -48,6 +55,12 @@ async def run_load_test(
                         latencies=latencies,
                         status_codes=status_codes,
                         app_statuses=app_statuses,
+                        request_runtime_modes=request_runtime_modes,
+                        planning_sources=planning_sources,
+                        planner_latencies=planner_latencies,
+                        tool_call_counts=tool_call_counts,
+                        runtime_mode=runtime_mode,
+                        llm_percent=llm_percent,
                     )
                 )
             )
@@ -58,8 +71,13 @@ async def run_load_test(
         latencies=latencies,
         status_codes=status_codes,
         app_statuses=app_statuses,
+        request_runtime_modes=request_runtime_modes,
+        planning_sources=planning_sources,
+        planner_latencies=planner_latencies,
+        tool_call_counts=tool_call_counts,
         requested_rps=rps,
         elapsed_seconds=elapsed,
+        timeout_seconds=timeout_seconds,
     )
 
 
@@ -75,6 +93,12 @@ async def _one_request(
     latencies: list[int],
     status_codes: list[int],
     app_statuses: list[str],
+    request_runtime_modes: list[str],
+    planning_sources: list[str],
+    planner_latencies: list[int],
+    tool_call_counts: list[int],
+    runtime_mode: str | None,
+    llm_percent: int,
 ) -> None:
     delay = target_offset - (time.perf_counter() - run_started)
     if delay > 0:
@@ -86,6 +110,12 @@ async def _one_request(
         'user_id': user_id,
         'message': message,
     }
+    effective_runtime_mode = choose_runtime_mode(index=index, runtime_mode=runtime_mode, llm_percent=llm_percent)
+    if effective_runtime_mode:
+        payload['runtime_mode'] = effective_runtime_mode
+        request_runtime_modes.append(effective_runtime_mode)
+    else:
+        request_runtime_modes.append('default')
 
     async with semaphore:
         started = time.perf_counter()
@@ -100,12 +130,23 @@ async def _one_request(
                 except Exception:
                     body = {}
                 app_statuses.append(str(body.get('status') or 'unknown'))
+                planning_sources.append(str(body.get('planning_source') or 'unknown'))
+                planner_latency = body.get('planner_latency_ms')
+                if isinstance(planner_latency, int):
+                    planner_latencies.append(planner_latency)
+                tool_calls = body.get('tool_calls')
+                if isinstance(tool_calls, list):
+                    tool_call_counts.append(len(tool_calls))
+                else:
+                    tool_call_counts.append(0)
             return
         except Exception:
             latency_ms = int((time.perf_counter() - started) * 1000)
             latencies.append(latency_ms)
             status_codes.append(0)
             app_statuses.append('request_exception')
+            planning_sources.append('request_exception')
+            tool_call_counts.append(0)
 
 
 def _summarize(
@@ -113,8 +154,13 @@ def _summarize(
     latencies: list[int],
     status_codes: list[int],
     app_statuses: list[str],
+    request_runtime_modes: list[str],
+    planning_sources: list[str],
+    planner_latencies: list[int],
+    tool_call_counts: list[int],
     requested_rps: int,
     elapsed_seconds: float,
+    timeout_seconds: float,
 ) -> dict:
     latencies_sorted = sorted(latencies)
     p50_index = max(0, int(len(latencies_sorted) * 0.50) - 1)
@@ -124,6 +170,7 @@ def _summarize(
     error_count = len(status_codes) - success_count
     return {
         'requested_rps': requested_rps,
+        'timeout_seconds': timeout_seconds,
         'achieved_rps': round(len(status_codes) / elapsed_seconds, 2),
         'total_requests': len(status_codes),
         'success_count': success_count,
@@ -133,8 +180,13 @@ def _summarize(
         'p50_latency_ms': latencies_sorted[p50_index] if latencies_sorted else 0,
         'p95_latency_ms': latencies_sorted[p95_index] if latencies_sorted else 0,
         'p99_latency_ms': latencies_sorted[p99_index] if latencies_sorted else 0,
+        'avg_planner_latency_ms': round(mean(planner_latencies), 2) if planner_latencies else 0,
+        'max_planner_latency_ms': max(planner_latencies) if planner_latencies else 0,
         'status_code_histogram': _histogram(status_codes),
         'app_status_histogram': _histogram_strings(app_statuses),
+        'request_runtime_mode_histogram': _histogram_strings(request_runtime_modes),
+        'planning_source_histogram': _histogram_strings(planning_sources),
+        'tool_call_count_histogram': _histogram(tool_call_counts),
     }
 
 
@@ -153,6 +205,20 @@ def _histogram_strings(values: list[str]) -> dict[str, int]:
     return histogram
 
 
+def choose_runtime_mode(*, index: int, runtime_mode: str | None, llm_percent: int) -> str | None:
+    if runtime_mode:
+        return runtime_mode
+    if llm_percent <= 0:
+        return 'heuristic'
+    if llm_percent >= 100:
+        return 'llm'
+    previous_bucket = (index * llm_percent) // 100
+    current_bucket = ((index + 1) * llm_percent) // 100
+    if current_bucket > previous_bucket:
+        return 'llm'
+    return 'heuristic'
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument('--base-url', type=str, default='http://127.0.0.1:18000')
@@ -160,6 +226,9 @@ def main() -> None:
     parser.add_argument('--duration', type=int, default=20, help='Duration in seconds.')
     parser.add_argument('--concurrency', type=int, default=50)
     parser.add_argument('--user-id', type=int, default=1)
+    parser.add_argument('--timeout', type=float, default=20.0, help='Per-request timeout in seconds.')
+    parser.add_argument('--runtime-mode', type=str, default=None, help='Force one runtime mode for all requests: heuristic or llm.')
+    parser.add_argument('--llm-percent', type=int, default=0, help='When runtime-mode is not set, send this percentage of requests with runtime_mode=llm and the rest with runtime_mode=heuristic.')
     parser.add_argument('--message-file', type=str, default=None, help='Optional text file with one message per line.')
     args = parser.parse_args()
 
@@ -180,6 +249,9 @@ def main() -> None:
             concurrency=args.concurrency,
             user_id=args.user_id,
             messages=messages,
+            timeout_seconds=args.timeout,
+            runtime_mode=args.runtime_mode,
+            llm_percent=max(0, min(args.llm_percent, 100)),
         )
     )
     print(json.dumps(report, ensure_ascii=False, indent=2))
